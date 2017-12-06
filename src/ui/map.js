@@ -24,6 +24,8 @@ const AttributionControl = require('./control/attribution_control');
 const LogoControl = require('./control/logo_control');
 const isSupported = require('mapbox-gl-supported');
 
+const Indoor = require('../indoor/indoor');
+
 require('./events'); // Pull in for documentation.js
 
 import type {LngLatLike} from '../geo/lng_lat';
@@ -346,6 +348,8 @@ class Map extends Camera {
 
         this.on('data', this._onData);
         this.on('dataloading', this._onDataLoading);
+
+        this._indoor = new Indoor(this);
     }
 
     /**
@@ -1576,6 +1580,55 @@ class Map extends Camera {
             this.stop().resize()._update();
         }
     }
+
+
+    createIndoorLayer(source:string, sourceId:string, styleUrl:string, 
+        bounds:any, minzoom:number, maxzoom:number, callback:any) {
+
+        if(!this.loaded()) {
+            this.fire('error', 'Map not loaded yet');
+        }
+
+        this.addSource(sourceId, {
+            type: "vector",
+            tiles: [ source ],
+            bounds: bounds,
+            maxzoom: maxzoom,
+            minzoom: minzoom
+        });
+
+        const request = this._transformRequest(styleUrl);
+        ajax.getJSON(request, (error, json) => {
+            if (error) {
+                this.fire('error', {error});
+                return;
+            }
+            for (var i = 0; i < json.length; i++){
+                this.addLayer(json[i]);
+            }
+    
+            this._indoor.addSourceId(sourceId);
+            this._indoor.loadLevels();
+            this.fire('indoor.loaded', sourceId);
+            callback();
+        });
+
+
+    }
+
+    removeIndoorLayer(sourceId) {
+        // TODO remove source and layers
+        this._indoor.removeSourceId(sourceId);
+    }
+
+    setIndoorLevel(level) {
+        this._indoor.setLevel(level);
+    }
+
+    getSelectedIndoorLevel(level) {
+        return this._indoor.selectedLevel;
+    }
+
 
     /**
      * Gets and sets a Boolean indicating whether the map will render an outline

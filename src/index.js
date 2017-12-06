@@ -9,6 +9,7 @@ const GeolocateControl = require('./ui/control/geolocate_control');
 const AttributionControl = require('./ui/control/attribution_control');
 const ScaleControl = require('./ui/control/scale_control');
 const FullscreenControl = require('./ui/control/fullscreen_control');
+const IndoorControl = require('./ui/control/indoor_control');
 const Popup = require('./ui/popup');
 const Marker = require('./ui/marker');
 const Style = require('./style/style');
@@ -32,6 +33,7 @@ module.exports = {
     AttributionControl,
     ScaleControl,
     FullscreenControl,
+    IndoorControl,
     Popup,
     Marker,
     Style,
