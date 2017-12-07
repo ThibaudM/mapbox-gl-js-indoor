@@ -1582,43 +1582,23 @@ class Map extends Camera {
     }
 
 
-    createIndoorLayer(source:string, sourceId:string, styleUrl:string, 
-        bounds:any, minzoom:number, maxzoom:number, callback:any) {
+    createIndoorLayer(sourceUrl:string, sourceId:string, styleUrl:string, 
+        bounds:any, minzoom:number, maxzoom:number) {
 
-        if(!this.loaded()) {
-            this.fire('error', 'Map not loaded yet');
-        }
+        if(this.loaded()) {
+            this._indoor.createIndoorLayer(sourceUrl, sourceId, styleUrl,
+            bounds, minzoom, maxzoom);
+            return;
+        } 
 
-        this.addSource(sourceId, {
-            type: "vector",
-            tiles: [ source ],
-            bounds: bounds,
-            maxzoom: maxzoom,
-            minzoom: minzoom
+        this.on('load', function () {
+            this._indoor.createIndoorLayer(sourceUrl, sourceId, styleUrl,
+                bounds, minzoom, maxzoom);
         });
-
-        const request = this._transformRequest(styleUrl);
-        ajax.getJSON(request, (error, json) => {
-            if (error) {
-                this.fire('error', {error});
-                return;
-            }
-            for (var i = 0; i < json.length; i++){
-                this.addLayer(json[i]);
-            }
-    
-            this._indoor.addSourceId(sourceId);
-            this._indoor.loadLevels();
-            this.fire('indoor.loaded', sourceId);
-            callback();
-        });
-
-
     }
 
     removeIndoorLayer(sourceId) {
-        // TODO remove source and layers
-        this._indoor.removeSourceId(sourceId);
+        this._indoor.removeIndoorLayer(sourceId);
     }
 
     setIndoorLevel(level) {

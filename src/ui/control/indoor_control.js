@@ -18,19 +18,32 @@ class IndoorControl {
 
     onAdd(map) {
 
-        this._map = map;
+        this._indoor = map._indoor;
 
-        // const container = this._container = DOM.create('div', className + '-group', map.getContainer());
-
+        // Create container
         this._container = DOM.create('div', `${className} ${className}-group`);
         this._container.addEventListener('contextmenu', this._onContextMenu.bind(this));
-        
-        this._map.on('indoor.building.added', this.loadLevels.bind(this));
-        this._map.on('indoor.level.changed', this._onLevelChanged.bind(this));
-    
         this._el = map.getCanvasContainer();
+
+
+        // If indoor layer is already loaded, update levels 
+        if(this._indoor.loaded()) {
+            this.loadLevels();
+
+            if(this._indoor.selectedLevel != undefined) {
+                this._setSelected(map._indoor.selectedLevel)
+            }
+        } 
+
+        // Register to indoor events
+        this._indoor.on('building.added', () => { this.loadLevels(); });
+        this._indoor.on('level.changed', (e) => {
+            this._setSelected(e.level);
+        });
+
         return this._container;
     }
+
 
     onRemove() {
         
@@ -38,8 +51,8 @@ class IndoorControl {
 
     loadLevels() {
 
-        const minLevel = this._map._indoor.minLevel;
-        const maxLevel = this._map._indoor.maxLevel;
+        const minLevel = this._indoor.minLevel;
+        const maxLevel = this._indoor.maxLevel;
 
         if(minLevel == maxLevel && maxLevel == 0) {
             this._container.style.visibility = 'hidden';
@@ -63,9 +76,6 @@ class IndoorControl {
         }
     }
 
-    _onLevelChanged(e, level) {
-        this._setSelected(e.level);
-    }
 
     _setSelected(level) {
 
@@ -80,16 +90,13 @@ class IndoorControl {
     _createLevelButton(level) {
         const a = DOM.create('button', className + '-icon', this._container);
         a.innerHTML = level.toString();
-        a.addEventListener('click', this._onLevelClicked.bind(this, level));
+        a.addEventListener('click', (e) => { 
+            if(this._indoor._selectedLevel == level) return;
+            this._indoor.setLevel(level);
+        });
         return a;
     }
 
-    _onLevelClicked(level, e) {
-        if(this._map.getSelectedIndoorLevel() == level) {
-            return;
-        }
-        this._map._indoor.setLevel(level);
-    }
 
     _onContextMenu(e) {
         e.preventDefault();

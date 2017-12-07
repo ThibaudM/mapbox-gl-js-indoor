@@ -1,9 +1,9 @@
+// @flow
 
-const util = require('../util/util');
+const Evented = require('../util/evented');
+const ajax = require('../util/ajax');
 
-
-
-class Indoor {
+class Indoor extends Evented {
 
     constructor(map) {
     	this._map = map;
@@ -12,29 +12,68 @@ class Indoor {
         this.maxLevel = 0;
         this.listOfLayers = []; 
         this._sourceId = -1;
+        this._sourceLoaded = false;
+        this._styleLoaded = false;
+        this._loaded = false;
     }
 
+    createIndoorLayer(sourceUrl: string, sourceId: string, styleUrl: string, 
+            bounds: any, minzoom: number, maxzoom: number) {
 
-	addSourceId(sourceId) {
-
+        // Load source
+        const source = this._map.addSource(sourceId, {
+            type: "vector",
+            tiles: [ sourceUrl ],
+            bounds: bounds,
+            maxzoom: maxzoom,
+            minzoom: minzoom
+        });
         this._sourceId = sourceId;
 
-        const source = this._map.getSource(sourceId);
-        if(source == null) {
-            this._map.fire('Error', 'Unknown source id');
-            return;
-        } 
+        source.on('data', (e)=>{
+            if(e.dataType == "source" &&
+                e.sourceDataType != "metadata" &&
+                e.sourceDataType != "content") {
+                this._sourceLoaded = true;
+                this._endCreationProcess();
+            }
+        });
 
-        source.on('data', (tile) => {this.loadLevels();});
-
-        if(this.selectedLevel == undefined) 
-            this.setLevel(Math.max(this.minLevel, 0));
-        else 
-            this.setLevel(this.selectedLevel);
+        // Load style
+        const request = this._map._transformRequest(styleUrl);
+        ajax.getJSON(request, (error, json) => {
+            if (error) {
+                this.fire('error', {error});
+                return;
+            }
+            for (var i = 0; i < json.length; i++){
+                this._map.addLayer(json[i]);
+            }
+    
+            this._styleLoaded = true;
+            this._endCreationProcess();
+        });
 
     }
 
-    removeSourceId(sourceId) {
+    _endCreationProcess() {
+
+        if(this._loaded || !this._sourceLoaded || !this._styleLoaded) {
+            return;
+        }
+
+        this.loadLevels();
+
+        this.fire('loaded', {sourceId: this._sourceId});
+        this._loaded = true;
+    }
+
+
+    removeIndoorLayer(sourceId) {
+
+        // TODO remove source and layers
+
+        this._loaded = false;
     	const index = this._sourceId.indexOf(sourceId);
     	if (index > -1) {
 		    this._sourceId.splice(index, 1);
@@ -70,7 +109,15 @@ class Indoor {
         this.maxLevel = maxLevel;
 
 		// or removed
-        this._map.fire('indoor.building.added', {minLevel: minLevel, maxLevel: maxLevel});
+        this.fire('building.added', {minLevel: minLevel, maxLevel: maxLevel});
+
+
+        if(this.selectedLevel == undefined) {
+            this.setLevel(Math.max(this.minLevel, 0));
+        }
+        else {
+            this.setLevel(this.selectedLevel);
+        }
 	}
 
 
@@ -108,12 +155,15 @@ class Indoor {
 
         if(this.selectedLevel != level) {
         	this.selectedLevel = level;
-			this._map.fire('indoor.level.changed', {'level': level});
+			this.fire('level.changed', {'level': level});
         }
 
 
     }
 
+    loaded() {
+        return this._loaded;
+    }
 
 };
 
