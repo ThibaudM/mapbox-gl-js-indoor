@@ -6,9 +6,10 @@ const ajax = require('../util/ajax');
 class Indoor extends Evented {
 
     constructor(map) {
-    	this._map = map;
+        super();
+        this._map = map;
         this.selectedLevel = undefined;
-    	this.minLevel = 0;
+        this.minLevel = 0;
         this.maxLevel = 0;
         this.listOfLayers = []; 
         this._sourceId = -1;
@@ -74,10 +75,10 @@ class Indoor extends Evented {
         // TODO remove source and layers
 
         this._loaded = false;
-    	const index = this._sourceId.indexOf(sourceId);
-    	if (index > -1) {
-		    this._sourceId.splice(index, 1);
-		}
+        const index = this._sourceId.indexOf(sourceId);
+        if (index > -1) {
+            this._sourceId.splice(index, 1);
+        }
         this.loadLevels();
     }
 
@@ -86,8 +87,8 @@ class Indoor extends Evented {
         let maxLevel = 0;
         let minLevel = 0;
 
-    	
-		const buildings = this._map.querySourceFeatures(this._sourceId, {sourceLayer: "indoor", 
+        
+        const buildings = this._map.querySourceFeatures(this._sourceId, {sourceLayer: "indoor", 
             filter: ["==", "type", "building"]});
 
         for (let i = 0; i < buildings.length; i++) { 
@@ -95,20 +96,20 @@ class Indoor extends Evented {
                 maxLevel = buildings[i].properties.levels - 1;
             }
         }
-	    
+        
 
         if(this.minLevel == minLevel && this.maxLevel == maxLevel)
             return;
 
         if(minLevel == 0 && maxLevel == 0) {
-	        this.selectedLevel = undefined;
+            this.selectedLevel = undefined;
         }
 
         
         this.minLevel = minLevel;
         this.maxLevel = maxLevel;
 
-		// or removed
+        // or removed
         this.fire('building.added', {minLevel: minLevel, maxLevel: maxLevel});
 
 
@@ -118,22 +119,22 @@ class Indoor extends Evented {
         else {
             this.setLevel(this.selectedLevel);
         }
-	}
+    }
 
 
     setLevel(level) {
 
         if(level > this.maxLevel || level < this.minLevel) {
-        	return;
+            return;
         }
 
-		const listOfLayers = [];
+        const listOfLayers = [];
         for(const key in this._map.style._layers) {
-		    const layer = this._map.style._layers[key];
-		    if(this._sourceId == layer.source && layer.id != "buildings") {
-		    	listOfLayers.push(layer.id);
-			}
-		}
+            const layer = this._map.style._layers[key];
+            if(this._sourceId == layer.source && layer.id != "buildings") {
+                listOfLayers.push(layer.id);
+            }
+        }
 
         for(let j=0; j<listOfLayers.length; j++) {
 
@@ -154,8 +155,8 @@ class Indoor extends Evented {
         }
 
         if(this.selectedLevel != level) {
-        	this.selectedLevel = level;
-			this.fire('level.changed', {'level': level});
+            this.selectedLevel = level;
+            this.fire('level.changed', {'level': level});
         }
 
 
