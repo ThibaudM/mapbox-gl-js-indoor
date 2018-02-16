@@ -36,7 +36,8 @@ class IndoorControl {
         } 
 
         // Register to indoor events
-        this._indoor.on('building.added', () => { this.loadLevels(); });
+        this._indoor.on('building.added', (data) => { this.loadNavigationBar(data); });
+        this._indoor.on('building.removed', () => { this.removeNavigationBar(); });
         this._indoor.on('level.changed', (e) => {
             this._setSelected(e.level);
         });
@@ -49,31 +50,30 @@ class IndoorControl {
         
     }
 
-    loadLevels() {
+    loadNavigationBar(data) {
 
-        const minLevel = this._indoor.minLevel;
-        const maxLevel = this._indoor.maxLevel;
-
-        if(minLevel == maxLevel && maxLevel == 0) {
-            this._container.style.visibility = 'hidden';
-            this._selectedButton = null;
-            return;
-        } else {
-            this._container.style.visibility = 'visible';
-        }
-
+        this._container.style.visibility = 'visible';
 
         while (this._container.firstChild) {
             this._container.removeChild(this._container.firstChild);
         }
 
-        for (let i = minLevel; i <= maxLevel; i++) { 
+        for (let i = data.minLevel; i <= data.maxLevel; i++) { 
             this._levelsButtons[i] = this._createLevelButton(i);
         }
 
-        if(this._selectedButton == null) {
-            this._setSelected(0);
-        }
+        // if(this._selectedButton == null) {
+            if(this._indoor.selectedLevel != undefined) {
+                this._setSelected(this._indoor.selectedLevel);
+            } else {
+                this._setSelected(0);
+            }
+        // }
+    }
+
+    removeNavigationBar() {
+        this._container.style.visibility = 'hidden';
+        // this._selectedButton = null;
     }
 
 
