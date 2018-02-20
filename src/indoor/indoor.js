@@ -2,7 +2,9 @@
 
 const Evented = require('../util/evented');
 const ajax = require('../util/ajax');
+
 const MIN_TIME_BETWEEN_LOADING_LEVELS = 500; // in ms
+const SOURCE_ID = "indoorSource"
 
 class Indoor extends Evented {
 
@@ -13,7 +15,6 @@ class Indoor extends Evented {
         this.minLevel = 0;
         this.maxLevel = 0;
         this.listOfLayers = []; 
-        this._sourceId = -1;
         this._sourceLoaded = false;
         this._styleLoaded = false;
         this._loaded = false;
@@ -21,18 +22,17 @@ class Indoor extends Evented {
         this._current_timeout = false;
     }
 
-    createIndoorLayer(sourceUrl: string, sourceId: string, styleUrl: string, 
+    createIndoorLayer(sourceUrl: string, styleUrl: string, imagesUrl: any,
             bounds: any, minzoom: number, maxzoom: number) {
 
         // Load source
-        const source = this._map.addSource(sourceId, {
+        const source = this._map.addSource(SOURCE_ID, {
             type: "vector",
             tiles: [ sourceUrl ],
             bounds: bounds,
             maxzoom: maxzoom,
             minzoom: minzoom
         });
-        this._sourceId = sourceId;
 
         source.on('data', (e)=>{
             if(e.dataType == "source" &&
@@ -51,7 +51,34 @@ class Indoor extends Evented {
             this.tryToLoadLevels();
         });
 
-        // Load style
+        // Load images
+        const requestImages = this._map._transformRequest(imagesUrl);
+        ajax.getJSON(requestImages, (error, json) => {
+            if (error) {
+                this.fire('error', {error});
+                return;
+            }
+
+            var imagesToLoad = 0;
+            for(var key in json)
+                if(json.hasOwnProperty(key))
+                    imagesToLoad++;
+
+            for (const imageId in json) {
+                const imageUrl = json[imageId];
+                
+                this._map.loadImage(imageUrl, function(error, image) {
+                    if (error) throw error;
+                    map.addImage(imageId, image);
+                    imagesToLoad--;
+                    if(imagesToLoad == 0) {
+                        //ended
+                    }
+                });
+            }
+        });
+
+        // Load Style
         const request = this._map._transformRequest(styleUrl);
         ajax.getJSON(request, (error, json) => {
             if (error) {
@@ -67,6 +94,7 @@ class Indoor extends Evented {
         });
 
     }
+
 
     tryToLoadLevels() {
         if(new Date().getTime() - this._timestampLoadLevels > MIN_TIME_BETWEEN_LOADING_LEVELS) {
@@ -89,7 +117,7 @@ class Indoor extends Evented {
 
         // this.loadLevels();
 
-        this.fire('loaded', {sourceId: this._sourceId});
+        this.fire('loaded', {sourceId: SOURCE_ID});
         this._loaded = true;
     }
 
@@ -99,11 +127,11 @@ class Indoor extends Evented {
         // TODO remove source and layers
 
         this._loaded = false;
-        const index = this._sourceId.indexOf(sourceId);
-        if (index > -1) {
-            this._sourceId.splice(index, 1);
-        }
-        // this.loadLevels();
+        // const index = this._sourceId.indexOf(sourceId);
+        // if (index > -1) {
+        //     this._sourceId.splice(index, 1);
+        // }
+        // // this.loadLevels();
     }
 
     loadLevels() {
@@ -114,7 +142,7 @@ class Indoor extends Evented {
         let minLevel = 0;
         
 
-        const features = this._map.querySourceFeatures(this._sourceId, {sourceLayer: "indoor", 
+        const features = this._map.querySourceFeatures(SOURCE_ID, {sourceLayer: "indoor", 
             filter: ["has", "level"]});
 
         for (let i = 0; i < features.length; i++) { 
@@ -168,10 +196,19 @@ class Indoor extends Evented {
         const listOfLayers = [];
         for(const key in this._map.style._layers) {
             const layer = this._map.style._layers[key];
-            if(this._sourceId == layer.source && layer.id != "buildings") {
+            if(SOURCE_ID == layer.source && layer.id != "buildings") {
                 listOfLayers.push(layer.id);
             }
         }
+
+        const buildingsLayerId = this._map.getLayer("buildings").id;
+        var visibility = this._map.getLayoutProperty(buildingsLayerId, 'visibility');
+        if(level >= 0 && visibility === 'none') {
+            this._map.setLayoutProperty(buildingsLayerId, 'visibility', 'visible');
+        } else if(level < 0 && visibility === 'visible') {
+            this._map.setLayoutProperty(buildingsLayerId, 'visibility', 'none');
+        }
+
 
         for(let j=0; j<listOfLayers.length; j++) {
 
@@ -182,7 +219,7 @@ class Indoor extends Evented {
                 currentFilter = ["all"];
             }
 
-            if(currentFilter.length >= 2 && 
+            if(currentFilter.length >= 3 && 
                 currentFilter[2].length >= 1 &&
                 currentFilter[2][1] == "level") {
                 currentFilter = currentFilter[1];   
