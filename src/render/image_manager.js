@@ -51,7 +51,7 @@ class ImageManager {
 
         this.shelfPack = new ShelfPack(64, 64, {autoResize: true});
         this.patterns = {};
-        this.atlasImage = RGBAImage.create({width: 64, height: 64});
+        this.atlasImage = new RGBAImage({width: 64, height: 64});
         this.dirty = true;
     }
 
@@ -120,7 +120,12 @@ class ImageManager {
         for (const id of ids) {
             const image = this.images[id];
             if (image) {
-                response[id] = image;
+                // Clone the image so that our own copy of its ArrayBuffer doesn't get transferred.
+                response[id] = {
+                    data: image.data.clone(),
+                    pixelRatio: image.pixelRatio,
+                    sdf: image.sdf
+                };
             }
         }
 
@@ -155,7 +160,7 @@ class ImageManager {
             return null;
         }
 
-        RGBAImage.resize(this.atlasImage, this.getPixelSize());
+        this.atlasImage.resize(this.getPixelSize());
 
         const src = image.data;
         const dst = this.atlasImage;

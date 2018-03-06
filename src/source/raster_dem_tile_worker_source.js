@@ -1,7 +1,6 @@
 // @flow
 
 const {DEMData} = require('../data/dem_data');
-const {serialize} = require('../util/web_worker_transfer');
 
 import type Actor from '../util/actor';
 import type {
@@ -13,8 +12,8 @@ import type {
 
 class RasterDEMTileWorkerSource {
     actor: Actor;
-    loading: {[string]: {[string]: DEMData}};
-    loaded: {[string]: {[string]: DEMData}};
+    loading: {[string]: DEMData};
+    loaded: {[string]: DEMData};
 
     constructor() {
         this.loading = {};
@@ -22,25 +21,21 @@ class RasterDEMTileWorkerSource {
     }
 
     loadTile(params: WorkerDEMTileParameters, callback: WorkerDEMTileCallback) {
-        const source = params.source,
-            uid = params.uid;
-
-        if (!this.loading[source])
-            this.loading[source] = {};
+        const uid = params.uid,
+            encoding = params.encoding;
 
         const dem = new DEMData(uid);
-        this.loading[source][uid] = dem;
-        dem.loadFromImage(params.rawImageData);
-        const transferrables = [];
-        delete this.loading[source][uid];
+        this.loading[uid] = dem;
+        dem.loadFromImage(params.rawImageData, encoding);
+        delete this.loading[uid];
 
-        this.loaded[source] = this.loaded[source] || {};
-        this.loaded[source][uid] = dem;
-        callback(null, serialize(dem, transferrables), transferrables);
+        this.loaded = this.loaded || {};
+        this.loaded[uid] = dem;
+        callback(null, dem);
     }
 
     removeTile(params: TileParameters) {
-        const loaded = this.loaded[params.source],
+        const loaded = this.loaded,
             uid = params.uid;
         if (loaded && loaded[uid]) {
             delete loaded[uid];

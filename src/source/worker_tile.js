@@ -2,14 +2,13 @@
 
 const FeatureIndex = require('../data/feature_index');
 const {performSymbolLayout} = require('../symbol/symbol_layout');
-const CollisionBoxArray = require('../symbol/collision_box');
+const {CollisionBoxArray} = require('../data/array_types');
 const DictionaryCoder = require('../util/dictionary_coder');
 const SymbolBucket = require('../data/bucket/symbol_bucket');
 const util = require('../util/util');
 const assert = require('assert');
 const {makeImageAtlas} = require('../render/image_atlas');
 const {makeGlyphAtlas} = require('../render/glyph_atlas');
-const {serialize} = require('../util/web_worker_transfer');
 const EvaluationParameters = require('../style/evaluation_parameters');
 const {OverscaledTileID} = require('./tile_id');
 
@@ -23,7 +22,6 @@ import type {
     WorkerTileParameters,
     WorkerTileCallback,
 } from '../source/worker_source';
-import type {Transferable} from '../types/transferable';
 
 class WorkerTile {
     tileID: OverscaledTileID;
@@ -34,6 +32,7 @@ class WorkerTile {
     source: string;
     overscaling: number;
     showCollisionBoxes: boolean;
+    collectResourceTiming: boolean;
 
     status: 'parsing' | 'done';
     data: VectorTile;
@@ -52,6 +51,7 @@ class WorkerTile {
         this.source = params.source;
         this.overscaling = params.overscaling;
         this.showCollisionBoxes = params.showCollisionBoxes;
+        this.collectResourceTiming = !!params.collectResourceTiming;
     }
 
     parse(data: VectorTile, layerIndex: StyleLayerIndex, actor: Actor, callback: WorkerTileCallback) {
@@ -164,18 +164,13 @@ class WorkerTile {
 
                 this.status = 'done';
 
-                const transferables = [
-                    glyphAtlas.image.data.buffer,
-                    imageAtlas.image.data.buffer
-                ];
-
                 callback(null, {
-                    buckets: serializeBuckets(util.values(buckets), transferables),
-                    featureIndex: serialize(featureIndex, transferables),
-                    collisionBoxArray: serialize(this.collisionBoxArray),
+                    buckets: util.values(buckets).filter(b => !b.isEmpty()),
+                    featureIndex,
+                    collisionBoxArray: this.collisionBoxArray,
                     glyphAtlasImage: glyphAtlas.image,
                     iconAtlasImage: imageAtlas.image
-                }, transferables);
+                });
             }
         }
     }
@@ -187,12 +182,6 @@ function recalculateLayers(layers: $ReadOnlyArray<StyleLayer>, zoom: number) {
     for (const layer of layers) {
         layer.recalculate(parameters);
     }
-}
-
-function serializeBuckets(buckets: $ReadOnlyArray<Bucket>, transferables: Array<Transferable>) {
-    return buckets
-        .filter((b) => !b.isEmpty())
-        .map((b) => serialize(b, transferables));
 }
 
 module.exports = WorkerTile;

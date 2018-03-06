@@ -3,7 +3,7 @@
 const util = require('../util/util');
 
 import type Dispatcher from '../util/dispatcher';
-import type Evented from '../util/evented';
+import type {Event, Evented} from '../util/evented';
 import type Map from '../ui/map';
 import type Tile from './tile';
 import type {OverscaledTileID} from './tile_id';
@@ -13,7 +13,6 @@ import type {Callback} from '../types/callback';
  * The `Source` interface must be implemented by each source type, including "core" types (`vector`, `raster`,
  * `video`, etc.) and all custom, third-party types.
  *
- * @class Source
  * @private
  *
  * @param {string} id The id for the source. Must not be used by any existing source.
@@ -40,7 +39,9 @@ export interface Source {
      * implementation for this Source type by calling `self.registerWorkerSource(workerSource: WorkerSource)`.
      * @private
      */
-    static workerSourceURL?: URL;
+    // Static interface properties are not supported in flow as of 0.62.0.
+    // https://github.com/facebook/flow/issues/5590
+    // static workerSourceURL?: URL;
 
     +type: string;
     id: string;
@@ -55,7 +56,7 @@ export interface Source {
 
     hasTransition(): boolean;
 
-    fire(type: string, data: Object): mixed;
+    fire(event: Event): mixed;
 
     +onAdd?: (map: Map) => void;
     +onRemove?: (map: Map) => void;

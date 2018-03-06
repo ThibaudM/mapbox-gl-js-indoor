@@ -2,6 +2,7 @@
 
 const Point = require('@mapbox/point-geometry');
 const window = require('./window');
+const assert = require('assert');
 
 exports.create = function (tagName: *, className?: string, container?: HTMLElement) {
     const el = window.document.createElement(tagName);
@@ -45,6 +46,37 @@ exports.setTransform = function(el: HTMLElement, value: string) {
     (el.style: any)[transformProp] = value;
 };
 
+// Feature detection for {passive: false} support in add/removeEventListener.
+let passiveSupported = false;
+
+try {
+    const options = (Object.defineProperty: any)({}, "passive", {
+        get: function() {
+            passiveSupported = true;
+        }
+    });
+    (window.addEventListener: any)("test", options, options);
+    (window.removeEventListener: any)("test", options, options);
+} catch (err) {
+    passiveSupported = false;
+}
+
+exports.addEventListener = function(target: *, type: *, callback: *, options: {passive?: boolean, capture?: boolean} = {}) {
+    if ('passive' in options && passiveSupported) {
+        target.addEventListener(type, callback, (options: any));
+    } else {
+        target.addEventListener(type, callback, options.capture);
+    }
+};
+
+exports.removeEventListener = function(target: *, type: *, callback: *, options: {passive?: boolean, capture?: boolean} = {}) {
+    if ('passive' in options && passiveSupported) {
+        target.removeEventListener(type, callback, (options: any));
+    } else {
+        target.removeEventListener(type, callback, options.capture);
+    }
+};
+
 // Suppress the next click, but only if it's immediate.
 const suppressClick: MouseEventListener = function (e) {
     e.preventDefault();
@@ -79,6 +111,18 @@ exports.touchPos = function (el: HTMLElement, e: any) {
         ));
     }
     return points;
+};
+
+exports.mouseButton = function (e: MouseEvent) {
+    assert(e.type === 'mousedown' || e.type === 'mouseup');
+    if (typeof window.InstallTrigger !== 'undefined' && e.button === 2 && e.ctrlKey &&
+        window.navigator.platform.toUpperCase().indexOf('MAC') >= 0) {
+        // Fix for https://github.com/mapbox/mapbox-gl-js/issues/3131:
+        // Firefox (detected by InstallTrigger) on Mac determines e.button = 2 when
+        // using Control + left click
+        return 0;
+    }
+    return e.button;
 };
 
 exports.remove = function(node: HTMLElement) {

@@ -1,7 +1,7 @@
 // @flow
 
 const assert = require('assert');
-const Evented = require('../util/evented');
+const {Event, ErrorEvent, Evented} = require('../util/evented');
 const StyleLayer = require('./style_layer');
 const loadSprite = require('./load_sprite');
 const ImageManager = require('../render/image_manager');
@@ -24,17 +24,18 @@ const getWorkerPool = require('../util/global_worker_pool');
 const deref = require('../style-spec/deref');
 const diff = require('../style-spec/diff');
 const rtlTextPlugin = require('../source/rtl_text_plugin');
-const Placement = require('./placement');
+const PauseablePlacement = require('./pauseable_placement');
 const ZoomHistory = require('./zoom_history');
+const CrossTileSymbolIndex = require('../symbol/cross_tile_symbol_index');
 
 import type Map from '../ui/map';
 import type Transform from '../geo/transform';
 import type {Source} from '../source/source';
 import type {StyleImage} from './style_image';
 import type {StyleGlyph} from './style_glyph';
-import type CollisionIndex from '../symbol/collision_index';
 import type {Callback} from '../types/callback';
 import type EvaluationParameters from './evaluation_parameters';
+import type Placement from '../symbol/placement';
 
 const supportedDiffOperations = util.pick(diff.operations, [
     'addLayer',
@@ -89,7 +90,8 @@ class Style extends Evented {
     _updatedPaintProps: {[layer: string]: true};
     _layerOrderChanged: boolean;
 
-    collisionIndex: CollisionIndex;
+    crossTileSymbolIndex: CrossTileSymbolIndex;
+    pauseablePlacement: PauseablePlacement;
     placement: Placement;
     z: number;
 
@@ -101,6 +103,7 @@ class Style extends Evented {
         this.imageManager = new ImageManager();
         this.glyphManager = new GlyphManager(map._transformRequest, options.localIdeographFontFamily);
         this.lineAtlas = new LineAtlas(256, 512);
+        this.crossTileSymbolIndex = new CrossTileSymbolIndex();
 
         this._layers = {};
         this._order  = [];
@@ -112,7 +115,7 @@ class Style extends Evented {
 
         const self = this;
         this._rtlTextPluginCallback = rtlTextPlugin.registerForPluginAvailability((args) => {
-            self.dispatcher.broadcast('loadRTLTextPlugin', args.pluginBlobURL, args.errorCallback);
+            self.dispatcher.broadcast('loadRTLTextPlugin', args.pluginURL, args.errorCallback);
             for (const id in self.sourceCaches) {
                 self.sourceCaches[id].reload(); // Should be a no-op if the plugin loads before any tiles load
             }
@@ -146,7 +149,7 @@ class Style extends Evented {
         validate?: boolean,
         accessToken?: string
     } = {}) {
-        this.fire('dataloading', {dataType: 'style'});
+        this.fire(new Event('dataloading', {dataType: 'style'}));
 
         const validate = typeof options.validate === 'boolean' ?
             options.validate : !mapbox.isMapboxURL(url);
@@ -156,7 +159,7 @@ class Style extends Evented {
 
         ajax.getJSON(request, (error, json) => {
             if (error) {
-                this.fire('error', {error});
+                this.fire(new ErrorEvent(error));
             } else if (json) {
                 this._load((json: any), validate);
             }
@@ -166,7 +169,7 @@ class Style extends Evented {
     loadJSON(json: StyleSpecification, options: {
         validate?: boolean
     } = {}) {
-        this.fire('dataloading', {dataType: 'style'});
+        this.fire(new Event('dataloading', {dataType: 'style'}));
 
         browser.frame(() => {
             this._load(json, options.validate !== false);
@@ -188,7 +191,7 @@ class Style extends Evented {
         if (json.sprite) {
             loadSprite(json.sprite, this.map._transformRequest, (err, images) => {
                 if (err) {
-                    this.fire('error', err);
+                    this.fire(new ErrorEvent(err));
                 } else if (images) {
                     for (const id in images) {
                         this.imageManager.addImage(id, images[id]);
@@ -196,7 +199,7 @@ class Style extends Evented {
                 }
 
                 this.imageManager.setLoaded(true);
-                this.fire('data', {dataType: 'style'});
+                this.fire(new Event('data', {dataType: 'style'}));
             });
         } else {
             this.imageManager.setLoaded(true);
@@ -219,8 +222,8 @@ class Style extends Evented {
 
         this.light = new Light(this.stylesheet.light);
 
-        this.fire('data', {dataType: 'style'});
-        this.fire('style.load');
+        this.fire(new Event('data', {dataType: 'style'}));
+        this.fire(new Event('style.load'));
     }
 
     _validateLayer(layer: StyleLayer) {
@@ -236,13 +239,11 @@ class Style extends Evented {
 
         const source = sourceCache.getSource();
         if (source.type === 'geojson' || (source.vectorLayerIds && source.vectorLayerIds.indexOf(sourceLayer) === -1)) {
-            this.fire('error', {
-                error: new Error(
-                    `Source layer "${sourceLayer}" ` +
-                    `does not exist on source "${source.id}" ` +
-                    `as specified by style layer "${layer.id}"`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(
+                `Source layer "${sourceLayer}" ` +
+                `does not exist on source "${source.id}" ` +
+                `as specified by style layer "${layer.id}"`
+            )));
         }
     }
 
@@ -326,7 +327,7 @@ class Style extends Evented {
 
             this._resetUpdates();
 
-            this.fire('data', {dataType: 'style'});
+            this.fire(new Event('data', {dataType: 'style'}));
         }
 
         for (const sourceId in this.sourceCaches) {
@@ -409,10 +410,10 @@ class Style extends Evented {
 
     addImage(id: string, image: StyleImage) {
         if (this.getImage(id)) {
-            return this.fire('error', {error: new Error('An image with this name already exists.')});
+            return this.fire(new ErrorEvent(new Error('An image with this name already exists.')));
         }
         this.imageManager.addImage(id, image);
-        this.fire('data', {dataType: 'style'});
+        this.fire(new Event('data', {dataType: 'style'}));
     }
 
     getImage(id: string): ?StyleImage {
@@ -421,10 +422,10 @@ class Style extends Evented {
 
     removeImage(id: string) {
         if (!this.getImage(id)) {
-            return this.fire('error', {error: new Error('No image with this name exists.')});
+            return this.fire(new ErrorEvent(new Error('No image with this name exists.')));
         }
         this.imageManager.removeImage(id);
-        this.fire('data', {dataType: 'style'});
+        this.fire(new Event('data', {dataType: 'style'}));
     }
 
     addSource(id: string, source: SourceSpecification, options?: {validate?: boolean}) {
@@ -442,6 +443,7 @@ class Style extends Evented {
         const shouldValidate = builtIns.indexOf(source.type) >= 0;
         if (shouldValidate && this._validate(validateStyle.source, `sources.${id}`, source, null, options)) return;
 
+        if (this.map && this.map._collectResourceTiming) (source: any).collectResourceTiming = true;
         const sourceCache = this.sourceCaches[id] = new SourceCache(id, source, this.dispatcher);
         sourceCache.style = this;
         sourceCache.setEventedParent(this, () => ({
@@ -467,14 +469,14 @@ class Style extends Evented {
         }
         for (const layerId in this._layers) {
             if (this._layers[layerId].source === id) {
-                return this.fire('error', {error: new Error(`Source "${id}" cannot be removed while layer "${layerId}" is using it.`)});
+                return this.fire(new ErrorEvent(new Error(`Source "${id}" cannot be removed while layer "${layerId}" is using it.`)));
             }
         }
 
         const sourceCache = this.sourceCaches[id];
         delete this.sourceCaches[id];
         delete this._updatedSources[id];
-        sourceCache.fire('data', {sourceDataType: 'metadata', dataType:'source', sourceId: id});
+        sourceCache.fire(new Event('data', {sourceDataType: 'metadata', dataType:'source', sourceId: id}));
         sourceCache.setEventedParent(null);
         sourceCache.clearTiles();
 
@@ -510,12 +512,17 @@ class Style extends Evented {
     /**
      * Add a layer to the map style. The layer will be inserted before the layer with
      * ID `before`, or appended if `before` is omitted.
-     * @param {string} before  ID of an existing layer to insert before
+     * @param {string} [before] ID of an existing layer to insert before
      */
     addLayer(layerObject: LayerSpecification, before?: string, options?: {validate?: boolean}) {
         this._checkLoaded();
 
         const id = layerObject.id;
+
+        if (this.getLayer(id)) {
+            this.fire(new ErrorEvent(new Error(`Layer with id "${id}" already exists on this map`)));
+            return;
+        }
 
         if (typeof layerObject.source === 'object') {
             this.addSource(id, layerObject.source);
@@ -535,7 +542,7 @@ class Style extends Evented {
 
         const index = before ? this._order.indexOf(before) : this._order.length;
         if (before && index === -1) {
-            this.fire('error', { error: new Error(`Layer with id "${before}" does not exist on this map.`)});
+            this.fire(new ErrorEvent(new Error(`Layer with id "${before}" does not exist on this map.`)));
             return;
         }
 
@@ -568,7 +575,7 @@ class Style extends Evented {
      * Moves a layer to a different z-position. The layer will be inserted before the layer with
      * ID `before`, or appended if `before` is omitted.
      * @param {string} id  ID of the layer to move
-     * @param {string} before  ID of an existing layer to insert before
+     * @param {string} [before] ID of an existing layer to insert before
      */
     moveLayer(id: string, before?: string) {
         this._checkLoaded();
@@ -576,12 +583,7 @@ class Style extends Evented {
 
         const layer = this._layers[id];
         if (!layer) {
-            this.fire('error', {
-                error: new Error(
-                    `The layer '${id}' does not exist in ` +
-                    `the map's style and cannot be moved.`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(`The layer '${id}' does not exist in the map's style and cannot be moved.`)));
             return;
         }
 
@@ -590,7 +592,7 @@ class Style extends Evented {
 
         const newIndex = before ? this._order.indexOf(before) : this._order.length;
         if (before && newIndex === -1) {
-            this.fire('error', { error: new Error(`Layer with id "${before}" does not exist on this map.`)});
+            this.fire(new ErrorEvent(new Error(`Layer with id "${before}" does not exist on this map.`)));
             return;
         }
         this._order.splice(newIndex, 0, id);
@@ -611,12 +613,7 @@ class Style extends Evented {
 
         const layer = this._layers[id];
         if (!layer) {
-            this.fire('error', {
-                error: new Error(
-                    `The layer '${id}' does not exist in ` +
-                    `the map's style and cannot be removed.`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(`The layer '${id}' does not exist in the map's style and cannot be removed.`)));
             return;
         }
 
@@ -648,12 +645,7 @@ class Style extends Evented {
 
         const layer = this.getLayer(layerId);
         if (!layer) {
-            this.fire('error', {
-                error: new Error(
-                    `The layer '${layerId}' does not exist in ` +
-                    `the map's style and cannot have zoom extent.`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(`The layer '${layerId}' does not exist in the map's style and cannot have zoom extent.`)));
             return;
         }
 
@@ -673,12 +665,7 @@ class Style extends Evented {
 
         const layer = this.getLayer(layerId);
         if (!layer) {
-            this.fire('error', {
-                error: new Error(
-                    `The layer '${layerId}' does not exist in ` +
-                    `the map's style and cannot be filtered.`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(`The layer '${layerId}' does not exist in the map's style and cannot be filtered.`)));
             return;
         }
 
@@ -714,12 +701,7 @@ class Style extends Evented {
 
         const layer = this.getLayer(layerId);
         if (!layer) {
-            this.fire('error', {
-                error: new Error(
-                    `The layer '${layerId}' does not exist in ` +
-                    `the map's style and cannot be styled.`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(`The layer '${layerId}' does not exist in the map's style and cannot be styled.`)));
             return;
         }
 
@@ -744,12 +726,7 @@ class Style extends Evented {
 
         const layer = this.getLayer(layerId);
         if (!layer) {
-            this.fire('error', {
-                error: new Error(
-                    `The layer '${layerId}' does not exist in ` +
-                    `the map's style and cannot be styled.`
-                )
-            });
+            this.fire(new ErrorEvent(new Error(`The layer '${layerId}' does not exist in the map's style and cannot be styled.`)));
             return;
         }
 
@@ -827,15 +804,14 @@ class Style extends Evented {
         const includedSources = {};
         if (params && params.layers) {
             if (!Array.isArray(params.layers)) {
-                this.fire('error', {error: 'parameters.layers must be an Array.'});
+                this.fire(new ErrorEvent(new Error('parameters.layers must be an Array.')));
                 return [];
             }
             for (const layerId of params.layers) {
                 const layer = this._layers[layerId];
                 if (!layer) {
                     // this layer is not in the style.layers array
-                    this.fire('error', {error: `The layer '${layerId}' does not exist ` +
-                        `in the map's style and cannot be queried for features.`});
+                    this.fire(new ErrorEvent(new Error(`The layer '${layerId}' does not exist in the map's style and cannot be queried for features.`)));
                     return [];
                 }
                 includedSources[layer.source] = true;
@@ -845,7 +821,7 @@ class Style extends Evented {
         const sourceResults = [];
         for (const id in this.sourceCaches) {
             if (params.layers && !includedSources[id]) continue;
-            const results = QueryFeatures.rendered(this.sourceCaches[id], this._layers, queryGeometry, params, zoom, bearing);
+            const results = QueryFeatures.rendered(this.sourceCaches[id], this._layers, queryGeometry, params, zoom, bearing, this.placement ? this.placement.collisionIndex : null);
             sourceResults.push(results);
         }
         return this._flattenRenderedFeatures(sourceResults);
@@ -893,13 +869,16 @@ class Style extends Evented {
         }
         if (!_update) return;
 
-        const transition = util.extend({
-            duration: 300,
-            delay: 0
-        }, this.stylesheet.transition);
+        const parameters = {
+            now: browser.now(),
+            transition: util.extend({
+                duration: 300,
+                delay: 0
+            }, this.stylesheet.transition)
+        };
 
         this.light.setLight(lightOptions);
-        this.light.updateTransitions(transition);
+        this.light.updateTransitions(parameters);
     }
 
     _validate(validate: ({}) => void, key: string, value: any, props: any, options?: {validate?: boolean}) {
@@ -937,24 +916,6 @@ class Style extends Evented {
         }
     }
 
-    getNeedsFullPlacement() {
-        // Anything that changes our "in progress" layer and tile indices requires us
-        // to start over. When we start over, we do a full placement instead of incremental
-        // to prevent starvation.
-        if (this._layerOrderChanged) {
-            // We need to restart placement to keep layer indices in sync.
-            return true;
-        }
-        for (const id in this.sourceCaches) {
-            if (this.sourceCaches[id].getNeedsFullPlacement()) {
-                // A tile has been added or removed, we need to do a full placement
-                // New tiles can't be rendered until they've finished their first placement
-                return true;
-            }
-        }
-        return false;
-    }
-
     _generateCollisionBoxes() {
         for (const id in this.sourceCaches) {
             this._reloadSource(id);
@@ -962,19 +923,70 @@ class Style extends Evented {
     }
 
     _updatePlacement(transform: Transform, showCollisionBoxes: boolean, fadeDuration: number) {
-        const forceFullPlacement = this.getNeedsFullPlacement();
+        let symbolBucketsChanged = false;
+        let placementCommitted = false;
 
-        if (forceFullPlacement || !this.placement || this.placement.isDone()) {
-            this.placement = new Placement(transform, this._order, forceFullPlacement, showCollisionBoxes, fadeDuration, this.placement);
+        const layerTiles = {};
+
+        for (const layerID of this._order) {
+            const styleLayer = this._layers[layerID];
+            if (styleLayer.type !== 'symbol') continue;
+
+            if (!layerTiles[styleLayer.source]) {
+                const sourceCache = this.sourceCaches[styleLayer.source];
+                layerTiles[styleLayer.source] = sourceCache.getRenderableIds()
+                    .map((id) => sourceCache.getTileByID(id))
+                    .sort((a, b) => (b.tileID.overscaledZ - a.tileID.overscaledZ) || (a.tileID.isLessThan(b.tileID) ? -1 : 1));
+            }
+
+            const layerBucketsChanged = this.crossTileSymbolIndex.addLayer(styleLayer, layerTiles[styleLayer.source]);
+            symbolBucketsChanged = symbolBucketsChanged || layerBucketsChanged;
+        }
+        this.crossTileSymbolIndex.pruneUnusedLayers(this._order);
+
+        // Anything that changes our "in progress" layer and tile indices requires us
+        // to start over. When we start over, we do a full placement instead of incremental
+        // to prevent starvation.
+        // We need to restart placement to keep layer indices in sync.
+        const forceFullPlacement = this._layerOrderChanged;
+
+        if (forceFullPlacement || !this.pauseablePlacement || (this.pauseablePlacement.isDone() && !this.placement.stillRecent(browser.now()))) {
+            this.pauseablePlacement = new PauseablePlacement(transform, this._order, forceFullPlacement, showCollisionBoxes, fadeDuration);
             this._layerOrderChanged = false;
         }
 
-        this.placement.continuePlacement(this._order, this._layers, this.sourceCaches);
+        if (this.pauseablePlacement.isDone()) {
+            // the last placement finished running, but the next one hasn’t
+            // started yet because of the `stillRecent` check immediately
+            // above, so mark it stale to ensure that we request another
+            // render frame
+            this.placement.setStale();
+        } else {
+            this.pauseablePlacement.continuePlacement(this._order, this._layers, layerTiles);
 
-        if (this.placement.isDone()) this.collisionIndex = this.placement.collisionIndex;
+            if (this.pauseablePlacement.isDone()) {
+                this.placement = this.pauseablePlacement.commit(this.placement, browser.now());
+                placementCommitted = true;
+            }
+
+            if (symbolBucketsChanged) {
+                // since the placement gets split over multiple frames it is possible
+                // these buckets were processed before they were changed and so the
+                // placement is already stale while it is in progress
+                this.pauseablePlacement.placement.setStale();
+            }
+        }
+
+        if (placementCommitted || symbolBucketsChanged) {
+            for (const layerID of this._order) {
+                const styleLayer = this._layers[layerID];
+                if (styleLayer.type !== 'symbol') continue;
+                this.placement.updateLayerOpacities(styleLayer, layerTiles[styleLayer.source]);
+            }
+        }
 
         // needsRender is false when we have just finished a placement that didn't change the visibility of any symbols
-        const needsRerender = !this.placement.isDone() || this.placement.stillFading();
+        const needsRerender = !this.pauseablePlacement.isDone() || this.placement.hasTransitions(browser.now());
         return needsRerender;
     }
 

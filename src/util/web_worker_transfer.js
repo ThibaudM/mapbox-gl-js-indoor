@@ -13,6 +13,7 @@ const {
 } = require('../style-spec/expression');
 const {CompoundExpression} = require('../style-spec/expression/compound_expression');
 const expressions = require('../style-spec/expression/definitions');
+const {ImageData} = require('./window');
 
 import type {Transferable} from '../types/transferable';
 
@@ -29,6 +30,7 @@ export type Serialized =
     | RegExp
     | ArrayBuffer
     | $ArrayBufferView
+    | ImageData
     | Array<Serialized>
     | {| name: string, properties: {+[string]: Serialized} |};
 
@@ -85,6 +87,7 @@ Grid.deserialize = function deserializeGrid(serialized: ArrayBuffer): Grid {
 register('Grid', Grid);
 
 register('Color', Color);
+register('Error', Error);
 
 register('StylePropertyFunction', StylePropertyFunction);
 register('StyleExpression', StyleExpression, {omit: ['_evaluator']});
@@ -97,7 +100,7 @@ register('ZoomDependentExpression', ZoomDependentExpression);
 register('ZoomConstantExpression', ZoomConstantExpression);
 register('CompoundExpression', CompoundExpression, {omit: ['_evaluate']});
 for (const name in expressions) {
-    if (expressions[name]._classRegistryKey) continue;
+    if ((expressions[name]: any)._classRegistryKey) continue;
     register(`Expression_${name}`, expressions[name]);
 }
 
@@ -112,6 +115,8 @@ for (const name in expressions) {
  * If a `transferables` array is provided, add any transferable objects (i.e.,
  * any ArrayBuffers or ArrayBuffer views) to the list. (If a copy is needed,
  * this should happen in the client code, before using serialize().)
+ *
+ * @private
  */
 function serialize(input: mixed, transferables?: Array<Transferable>): Serialized {
     if (input === null ||
@@ -140,6 +145,13 @@ function serialize(input: mixed, transferables?: Array<Transferable>): Serialize
             transferables.push(view.buffer);
         }
         return view;
+    }
+
+    if (input instanceof ImageData) {
+        if (transferables) {
+            transferables.push(input.data.buffer);
+        }
+        return input;
     }
 
     if (Array.isArray(input)) {
@@ -199,7 +211,8 @@ function deserialize(input: Serialized): mixed {
         input instanceof Date ||
         input instanceof RegExp ||
         input instanceof ArrayBuffer ||
-        ArrayBuffer.isView(input)) {
+        ArrayBuffer.isView(input) ||
+        input instanceof ImageData) {
         return input;
     }
 

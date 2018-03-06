@@ -2,12 +2,11 @@
 
 const ajax = require('../util/ajax');
 const util = require('../util/util');
-const Evented = require('../util/evented');
+const {Evented} = require('../util/evented');
 const normalizeURL = require('../util/mapbox').normalizeTileURL;
 const browser = require('../util/browser');
 const {OverscaledTileID} = require('./tile_id');
 const RasterTileSource = require('./raster_tile_source');
-const {deserialize} = require('../util/web_worker_transfer');
 
 import type {Source} from './source';
 import type Dispatcher from '../util/dispatcher';
@@ -16,13 +15,14 @@ import type {Callback} from '../types/callback';
 
 
 class RasterDEMTileSource extends RasterTileSource implements Source {
-    _options: RasterSourceSpecification;
+    encoding: "mapbox" | "terrarium";
 
-    constructor(id: string, options: RasterSourceSpecification, dispatcher: Dispatcher, eventedParent: Evented) {
+    constructor(id: string, options: RasterDEMSourceSpecification, dispatcher: Dispatcher, eventedParent: Evented) {
         super(id, options, dispatcher, eventedParent);
         this.type = 'raster-dem';
         this.maxzoom = 22;
         this._options = util.extend({}, options);
+        this.encoding = options.encoding || "mapbox";
     }
 
     serialize() {
@@ -32,6 +32,7 @@ class RasterDEMTileSource extends RasterTileSource implements Source {
             tileSize: this.tileSize,
             tiles: this.tiles,
             bounds: this.bounds,
+            encoding: this.encoding
         };
     }
 
@@ -58,7 +59,8 @@ class RasterDEMTileSource extends RasterTileSource implements Source {
                     uid: tile.uid,
                     coord: tile.tileID,
                     source: this.id,
-                    rawImageData: rawImageData
+                    rawImageData: rawImageData,
+                    encoding: this.encoding
                 };
 
                 if (!tile.workerID || tile.state === 'expired') {
@@ -67,14 +69,14 @@ class RasterDEMTileSource extends RasterTileSource implements Source {
             }
         }
 
-        function done(err, serialized) {
+        function done(err, dem) {
             if (err) {
                 tile.state = 'errored';
                 callback(err);
             }
 
-            if (serialized) {
-                tile.dem = (deserialize(serialized): any);
+            if (dem) {
+                tile.dem = dem;
                 tile.needsHillshadePrepare = true;
                 tile.state = 'loaded';
                 callback(null);
@@ -116,6 +118,10 @@ class RasterDEMTileSource extends RasterTileSource implements Source {
 
     unloadTile(tile: Tile) {
         if (tile.demTexture) this.map.painter.saveTileTexture(tile.demTexture);
+        if (tile.fbo) {
+            tile.fbo.destroy();
+            delete tile.fbo;
+        }
         if (tile.dem) delete tile.dem;
         delete tile.neighboringTiles;
 

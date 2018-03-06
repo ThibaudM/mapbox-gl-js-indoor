@@ -2,10 +2,13 @@
 
 const glMatrix = require('@mapbox/gl-matrix');
 const pattern = require('./pattern');
+const Texture = require('./texture');
 const Color = require('../style-spec/util/color');
+const DepthMode = require('../gl/depth_mode');
 const mat3 = glMatrix.mat3;
 const mat4 = glMatrix.mat4;
 const vec3 = glMatrix.vec3;
+const StencilMode = require('../gl/stencil_mode');
 
 import type Painter from './painter';
 import type SourceCache from '../source/source_cache';
@@ -20,21 +23,54 @@ function draw(painter: Painter, source: SourceCache, layer: FillExtrusionStyleLa
         return;
     }
 
-    if (painter.renderPass === '3d') {
-        const context = painter.context;
+    if (painter.renderPass === 'offscreen') {
+        drawToExtrusionFramebuffer(painter, layer);
 
-        context.stencilTest.set(false);
-        context.depthTest.set(true);
+        let first = true;
+        for (const coord of coords) {
+            const tile = source.getTile(coord);
+            const bucket: ?FillExtrusionBucket = (tile.getBucket(layer): any);
+            if (!bucket) continue;
 
-        context.clear({ color: Color.transparent });
-        context.depthMask.set(true);
-
-        for (let i = 0; i < coords.length; i++) {
-            drawExtrusion(painter, source, layer, coords[i]);
+            drawExtrusion(painter, source, layer, tile, coord, bucket, first);
+            first = false;
         }
     } else if (painter.renderPass === 'translucent') {
         drawExtrusionTexture(painter, layer);
     }
+}
+
+function drawToExtrusionFramebuffer(painter, layer) {
+    const context = painter.context;
+    const gl = context.gl;
+
+    let renderTarget = layer.viewportFrame;
+
+    if (painter.depthRboNeedsClear) {
+        painter.setupOffscreenDepthRenderbuffer();
+    }
+
+    if (!renderTarget) {
+        const texture = new Texture(context, {width: painter.width, height: painter.height, data: null}, gl.RGBA);
+        texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
+
+        renderTarget = layer.viewportFrame = context.createFramebuffer(painter.width, painter.height);
+        renderTarget.colorAttachment.set(texture.texture);
+    }
+
+    context.bindFramebuffer.set(renderTarget.framebuffer);
+    renderTarget.depthAttachment.set(painter.depthRbo);
+
+    if (painter.depthRboNeedsClear) {
+        context.clear({ depth: 1 });
+        painter.depthRboNeedsClear = false;
+    }
+
+    context.clear({ color: Color.transparent });
+
+    context.setStencilMode(StencilMode.disabled);
+    context.setDepthMode(new DepthMode(gl.LEQUAL, DepthMode.ReadWrite, [0, 1]));
+    context.setColorMode(painter.colorModeForRenderPass());
 }
 
 function drawExtrusionTexture(painter, layer) {
@@ -45,11 +81,12 @@ function drawExtrusionTexture(painter, layer) {
     const gl = context.gl;
     const program = painter.useProgram('extrusionTexture');
 
-    context.stencilTest.set(false);
-    context.depthTest.set(false);
+    context.setStencilMode(StencilMode.disabled);
+    context.setDepthMode(DepthMode.disabled);
+    context.setColorMode(painter.colorModeForRenderPass());
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, renderedTexture.texture);
+    context.activeTexture.set(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, renderedTexture.colorAttachment.get());
 
     gl.uniform1f(program.uniforms.u_opacity, layer.paint.get('fill-extrusion-opacity'));
     gl.uniform1i(program.uniforms.u_image, 0);
@@ -60,23 +97,22 @@ function drawExtrusionTexture(painter, layer) {
 
     gl.uniform2f(program.uniforms.u_world, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
-    painter.viewportVAO.bind(context, program, painter.viewportBuffer);
+    painter.viewportVAO.bind(context, program, painter.viewportBuffer, []);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
-function drawExtrusion(painter, source, layer, coord) {
-    const tile = source.getTile(coord);
-    const bucket: ?FillExtrusionBucket = (tile.getBucket(layer): any);
-    if (!bucket) return;
-
+function drawExtrusion(painter, source, layer, tile, coord, bucket, first) {
     const context = painter.context;
     const gl = context.gl;
 
     const image = layer.paint.get('fill-extrusion-pattern');
 
+    const prevProgram = painter.context.program.get();
     const programConfiguration = bucket.programConfigurations.get(layer.id);
     const program = painter.useProgram(image ? 'fillExtrusionPattern' : 'fillExtrusion', programConfiguration);
-    programConfiguration.setUniforms(context, program, layer.paint, {zoom: painter.transform.zoom});
+    if (first || program.program !== prevProgram) {
+        programConfiguration.setUniforms(context, program, layer.paint, {zoom: painter.transform.zoom});
+    }
 
     if (image) {
         if (pattern.isPatternMissing(image, painter)) return;

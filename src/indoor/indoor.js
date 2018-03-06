@@ -1,6 +1,6 @@
 // @flow
 
-const Evented = require('../util/evented');
+const {Event, ErrorEvent, Evented} = require('../util/evented');
 const ajax = require('../util/ajax');
 
 const MIN_TIME_BETWEEN_LOADING_LEVELS = 500; // in ms
@@ -55,7 +55,7 @@ class Indoor extends Evented {
         const requestImages = this._map._transformRequest(imagesUrl);
         ajax.getJSON(requestImages, (error, json) => {
             if (error) {
-                this.fire('error', {error});
+                this.fire(new ErrorEvent('error', {error}));
                 return;
             }
 
@@ -82,7 +82,7 @@ class Indoor extends Evented {
         const request = this._map._transformRequest(styleUrl);
         ajax.getJSON(request, (error, json) => {
             if (error) {
-                this.fire('error', {error});
+                this.fire(new ErrorEvent('error', {error}));
                 return;
             }
             for (var i = 0; i < json.length; i++){
@@ -117,7 +117,7 @@ class Indoor extends Evented {
 
         // this.loadLevels();
 
-        this.fire('loaded', {sourceId: SOURCE_ID});
+        this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
         this._loaded = true;
     }
 
@@ -164,9 +164,9 @@ class Indoor extends Evented {
         this.maxLevel = maxLevel;
 
         if(minLevel == 0 && maxLevel == 0) {
-            this.fire('building.removed');
+            this.fire(new Event('building.removed'));
         } else {
-            this.fire('building.added', {minLevel: minLevel, maxLevel: maxLevel});            
+            this.fire(new Event('building.added', {minLevel: minLevel, maxLevel: maxLevel}));            
         }
 
 
@@ -230,7 +230,7 @@ class Indoor extends Evented {
 
         if(this.selectedLevel != level) {
             this.selectedLevel = level;
-            this.fire('level.changed', {'level': level});
+            this.fire(new Event('level.changed', {'level': level}));
         }
 
 

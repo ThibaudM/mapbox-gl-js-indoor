@@ -1,9 +1,10 @@
 // @flow
 const Coordinate = require('../geo/coordinate');
 const Texture = require('./texture');
-const RenderTexture = require('./render_texture');
 const EXTENT = require('../data/extent');
 const mat4 = require('@mapbox/gl-matrix').mat4;
+const StencilMode = require('../gl/stencil_mode');
+const DepthMode = require('../gl/depth_mode');
 
 import type Painter from './painter';
 import type SourceCache from '../source/source_cache';
@@ -13,31 +14,33 @@ import type {OverscaledTileID} from '../source/tile_id';
 module.exports = drawHillshade;
 
 function drawHillshade(painter: Painter, sourceCache: SourceCache, layer: HillshadeStyleLayer, tileIDs: Array<OverscaledTileID>) {
-    if (painter.renderPass !== 'hillshadeprepare' && painter.renderPass !== 'translucent') return;
+    if (painter.renderPass !== 'offscreen' && painter.renderPass !== 'translucent') return;
 
     const context = painter.context;
+    const sourceMaxZoom = sourceCache.getSource().maxzoom;
 
-    painter.setDepthSublayer(0);
-    context.stencilTest.set(false);
+    context.setDepthMode(painter.depthModeForSublayer(0, DepthMode.ReadOnly));
+    context.setStencilMode(StencilMode.disabled);
+    context.setColorMode(painter.colorModeForRenderPass());
 
     for (const tileID of tileIDs) {
         const tile = sourceCache.getTile(tileID);
-        if (tile.needsHillshadePrepare && painter.renderPass === 'hillshadeprepare') {
-            prepareHillshade(painter, tile);
+        if (tile.needsHillshadePrepare && painter.renderPass === 'offscreen') {
+            prepareHillshade(painter, tile, sourceMaxZoom);
             continue;
         } else if (painter.renderPass === 'translucent') {
             renderHillshade(painter, tile, layer);
         }
     }
 
+    context.viewport.set([0, 0, painter.width, painter.height]);
 }
 
 function setLight(program, painter, layer) {
     let azimuthal = layer.paint.get('hillshade-illumination-direction') * (Math.PI / 180);
-    const zenith = 30 * (Math.PI / 180);
     // modify azimuthal angle by map rotation if light is anchored at the viewport
     if (layer.paint.get('hillshade-illumination-anchor') === 'viewport')  azimuthal -= painter.transform.angle;
-    painter.context.gl.uniform3f(program.uniforms.u_light, layer.paint.get('hillshade-exaggeration'), azimuthal, zenith);
+    painter.context.gl.uniform2f(program.uniforms.u_light, layer.paint.get('hillshade-exaggeration'), azimuthal);
 
 }
 
@@ -50,14 +53,17 @@ function getTileLatRange(painter, tileID: OverscaledTileID) {
 function renderHillshade(painter, tile, layer) {
     const context = painter.context;
     const gl = context.gl;
+    const fbo = tile.fbo;
+    if (!fbo) return;
 
     const program = painter.useProgram('hillshade');
-    const posMatrix = painter.transform.calculatePosMatrix(tile.tileID.toUnwrapped());
+    const posMatrix = painter.transform.calculatePosMatrix(tile.tileID.toUnwrapped(), true);
     setLight(program, painter, layer);
     // for scaling the magnitude of a points slope by its latitude
     const latRange = getTileLatRange(painter, tile.tileID);
     context.activeTexture.set(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, tile.texture.texture);
+
+    gl.bindTexture(gl.TEXTURE_2D, fbo.colorAttachment.get());
 
     gl.uniformMatrix4fv(program.uniforms.u_matrix, false, posMatrix);
     gl.uniform2fv(program.uniforms.u_latrange, latRange);
@@ -82,7 +88,7 @@ function renderHillshade(painter, tile, layer) {
     } else {
         const buffer = painter.rasterBoundsBuffer;
         const vao = painter.rasterBoundsVAO;
-        vao.bind(context, program, buffer);
+        vao.bind(context, program, buffer, []);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, buffer.length);
     }
 }
@@ -90,7 +96,7 @@ function renderHillshade(painter, tile, layer) {
 
 // hillshade rendering is done in two steps. the prepare step first calculates the slope of the terrain in the x and y
 // directions for each pixel, and saves those values to a framebuffer texture in the r and g channels.
-function prepareHillshade(painter, tile) {
+function prepareHillshade(painter, tile, sourceMaxZoom) {
     const context = painter.context;
     const gl = context.gl;
     // decode rgba levels by using integer overflow to convert each Uint32Array element -> 4 Uint8Array elements.
@@ -124,11 +130,18 @@ function prepareHillshade(painter, tile) {
         }
 
         context.activeTexture.set(gl.TEXTURE0);
-        if (!tile.texture) {
-            tile.texture = new RenderTexture(painter, tileSize, tileSize);
-        } else {
-            tile.texture.bindFbo();
+
+        let fbo = tile.fbo;
+
+        if (!fbo) {
+            const renderTexture = new Texture(context, {width: tileSize, height: tileSize, data: null}, gl.RGBA);
+            renderTexture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
+
+            fbo = tile.fbo = context.createFramebuffer(tileSize, tileSize);
+            fbo.colorAttachment.set(renderTexture.texture);
         }
+
+        context.bindFramebuffer.set(fbo.framebuffer);
         context.viewport.set([0, 0, tileSize, tileSize]);
 
         const matrix = mat4.create();
@@ -142,15 +155,14 @@ function prepareHillshade(painter, tile) {
         gl.uniform1f(program.uniforms.u_zoom, tile.tileID.overscaledZ);
         gl.uniform2fv(program.uniforms.u_dimension, [tileSize * 2, tileSize * 2]);
         gl.uniform1i(program.uniforms.u_image, 1);
+        gl.uniform1f(program.uniforms.u_maxzoom, sourceMaxZoom);
 
         const buffer = painter.rasterBoundsBuffer;
         const vao = painter.rasterBoundsVAO;
 
-        vao.bind(context, program, buffer);
+        vao.bind(context, program, buffer, []);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, buffer.length);
 
-        tile.texture.unbind();
-        context.viewport.set([0, 0, painter.width, painter.height]);
         tile.needsHillshadePrepare = false;
     }
 }

@@ -1,20 +1,18 @@
 {
-  "expression": [
-    "==",
-    ["to-string", ["get", "x"]],
-    ["to-string", ["get", "y"]]
-  ],
+  "expression": ["==", ["string", ["get", "x"]], ["get", "y"]],
   "inputs": [
-    [{}, {"properties": {"x": 1, "y": 1}}],
-    [{}, {"properties": {"x": 1, "y": 2}}]
+    [{}, {"properties": {"x": "1", "y": "1"}}],
+    [{}, {"properties": {"x": "1", "y": 2}}],
+    [{}, {"properties": {"x": "1", "y": 1}}]
   ],
   "expected": {
-    "outputs": [true, false],
     "compiled": {
       "result": "success",
-      "isZoomConstant": true,
       "isFeatureConstant": false,
+      "isZoomConstant": true,
       "type": "boolean"
-    }
+    },
+    "outputs": [true, false, false],
+    "serialized": ["==", ["string", ["get", "x"]], ["get", "y"]]
   }
 }

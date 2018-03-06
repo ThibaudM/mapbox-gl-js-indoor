@@ -6,6 +6,80 @@ const CompoundExpression = require('../../src/style-spec/expression/compound_exp
 require('../../src/style-spec/expression/definitions/index');
 
 const types = {
+    '==': [{
+        type: 'boolean',
+        parameters: ['string', 'string']
+    }, {
+        type: 'boolean',
+        parameters: ['number', 'number']
+    }, {
+        type: 'boolean',
+        parameters: ['boolean', 'boolean']
+    }, {
+        type: 'boolean',
+        parameters: ['null', 'null']
+    }, {
+        type: 'boolean',
+        parameters: ['string', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['number', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['boolean', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['null', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'string']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'number']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'boolean']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'null']
+    }],
+    '!=': [{
+        type: 'boolean',
+        parameters: ['string', 'string']
+    }, {
+        type: 'boolean',
+        parameters: ['number', 'number']
+    }, {
+        type: 'boolean',
+        parameters: ['boolean', 'boolean']
+    }, {
+        type: 'boolean',
+        parameters: ['null', 'null']
+    }, {
+        type: 'boolean',
+        parameters: ['string', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['number', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['boolean', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['null', 'value']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'string']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'number']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'boolean']
+    }, {
+        type: 'boolean',
+        parameters: ['value', 'null']
+    }],
     string: [{
         type: 'string',
         parameters: ['value']
@@ -82,6 +156,10 @@ const types = {
             'stop_input_n: number, stop_output_n: OutputType, ...'
         ]
     }],
+    length: [{
+        type: 'number',
+        parameters: ['string | array | value']
+    }],
     let: [{
         type: 'OutputType',
         parameters: [{ repeat: ['string (alphanumeric literal)', 'any']}, 'OutputType']
@@ -109,6 +187,9 @@ const types = {
 };
 
 for (const name in CompoundExpression.definitions) {
+    if (/^filter-/.test(name)) {
+        continue;
+    }
     const definition = CompoundExpression.definitions[name];
     if (Array.isArray(definition)) {
         types[name] = [{

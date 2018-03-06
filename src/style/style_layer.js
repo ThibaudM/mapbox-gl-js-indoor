@@ -4,7 +4,7 @@
 const util = require('../util/util');
 const styleSpec = require('../style-spec/reference/latest');
 const validateStyle = require('./validate_style');
-const Evented = require('../util/evented');
+const {Evented} = require('../util/evented');
 
 const {
     Layout,
@@ -15,7 +15,6 @@ const {
 
 import type {Bucket} from '../data/bucket';
 import type Point from '@mapbox/point-geometry';
-import type RenderTexture from '../render/render_texture';
 import type {FeatureFilter} from '../style-spec/feature_filter';
 import type {TransitionParameters} from './properties';
 import type EvaluationParameters from './evaluation_parameters';
@@ -42,7 +41,6 @@ class StyleLayer extends Evented {
     _transitioningPaint: Transitioning<any>;
     +paint: mixed;
 
-    viewportFrame: ?RenderTexture;
     _featureFilter: FeatureFilter;
 
     +queryRadius: (bucket: Bucket) => number;
@@ -197,11 +195,11 @@ class StyleLayer extends Evented {
         }));
     }
 
-    has3DPass() {
+    hasOffscreenPass() {
         return false;
     }
 
-    resize(gl: WebGLRenderingContext) { // eslint-disable-line
+    resize() {
         // noop
     }
 }

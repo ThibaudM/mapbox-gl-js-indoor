@@ -1,15 +1,15 @@
 // @flow
 
 const util = require('../util/util');
-const window = require('../util/window');
 const {CanonicalTileID} = require('./tile_id');
 const LngLat = require('../geo/lng_lat');
 const Point = require('@mapbox/point-geometry');
-const Evented = require('../util/evented');
+const {Event, ErrorEvent, Evented} = require('../util/evented');
 const ajax = require('../util/ajax');
 const browser = require('../util/browser');
 const EXTENT = require('../data/extent');
-const RasterBoundsArray = require('../data/raster_bounds_array');
+const {RasterBoundsArray} = require('../data/array_types');
+const rasterBoundsAttributes = require('../data/raster_bounds_attributes');
 const VertexArrayObject = require('../render/vertex_array_object');
 const Texture = require('../render/texture');
 
@@ -19,20 +19,12 @@ import type Dispatcher from '../util/dispatcher';
 import type Tile from './tile';
 import type Coordinate from '../geo/coordinate';
 import type {Callback} from '../types/callback';
-import type Context from '../gl/context';
 import type VertexBuffer from '../gl/vertex_buffer';
-
-export type ImageTextureSource =
-  ImageData |
-  HTMLImageElement |
-  HTMLCanvasElement |
-  HTMLVideoElement;
 
 /**
  * A data source containing an image.
  * (See the [Style Specification](https://www.mapbox.com/mapbox-gl-style-spec/#sources-image) for detailed documentation of options.)
  *
- * @interface ImageSource
  * @example
  * // add to map
  * map.addSource('some id', {
@@ -72,7 +64,6 @@ class ImageSource extends Evented implements Source {
     dispatcher: Dispatcher;
     map: Map;
     texture: Texture;
-    textureLoaded: boolean;
     image: ImageData;
     centerCoord: Coordinate;
     tileID: CanonicalTileID;
@@ -80,6 +71,9 @@ class ImageSource extends Evented implements Source {
     boundsBuffer: VertexBuffer;
     boundsVAO: VertexArrayObject;
 
+    /**
+     * @private
+     */
     constructor(id: string, options: ImageSourceSpecification | VideoSourceSpecification | CanvasSourceSpecification, dispatcher: Dispatcher, eventedParent: Evented) {
         super();
         this.id = id;
@@ -95,17 +89,16 @@ class ImageSource extends Evented implements Source {
         this.setEventedParent(eventedParent);
 
         this.options = options;
-        this.textureLoaded = false;
     }
 
     load() {
-        this.fire('dataloading', {dataType: 'source'});
+        this.fire(new Event('dataloading', {dataType: 'source'}));
 
         this.url = this.options.url;
 
         ajax.getImage(this.map._transformRequest(this.url, ajax.ResourceType.Image), (err, image) => {
             if (err) {
-                this.fire('error', {error: err});
+                this.fire(new ErrorEvent(err));
             } else if (image) {
                 this.image = browser.getImageData(image);
                 this._finishLoading();
@@ -116,7 +109,7 @@ class ImageSource extends Evented implements Source {
     _finishLoading() {
         if (this.map) {
             this.setCoordinates(this.coordinates);
-            this.fire('data', {dataType: 'source', sourceDataType: 'metadata'});
+            this.fire(new Event('data', {dataType: 'source', sourceDataType: 'metadata'}));
         }
     }
 
@@ -182,34 +175,29 @@ class ImageSource extends Evented implements Source {
             delete this.boundsBuffer;
         }
 
-        this.fire('data', {dataType:'source', sourceDataType: 'content'});
+        this.fire(new Event('data', {dataType:'source', sourceDataType: 'content'}));
         return this;
     }
 
     prepare() {
-        if (Object.keys(this.tiles).length === 0 || !this.image) return;
-        this._prepareImage(this.map.painter.context, this.image);
-    }
+        if (Object.keys(this.tiles).length === 0 || !this.image) {
+            return;
+        }
 
-    _prepareImage(context: Context, image: ImageTextureSource, resize?: boolean) {
+        const context = this.map.painter.context;
         const gl = context.gl;
+
         if (!this.boundsBuffer) {
-            this.boundsBuffer = context.createVertexBuffer(this._boundsArray);
+            this.boundsBuffer = context.createVertexBuffer(this._boundsArray, rasterBoundsAttributes.members);
         }
 
         if (!this.boundsVAO) {
             this.boundsVAO = new VertexArrayObject();
         }
 
-        if (!this.textureLoaded) {
-            this.textureLoaded = true;
-            this.texture = new Texture(context, image, gl.RGBA);
+        if (!this.texture) {
+            this.texture = new Texture(context, this.image, gl.RGBA);
             this.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
-        } else if (resize) {
-            this.texture.update(image);
-        } else if (image instanceof window.HTMLVideoElement || image instanceof window.ImageData || image instanceof window.HTMLCanvasElement) {
-            this.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
-            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, image);
         }
 
         for (const w in this.tiles) {

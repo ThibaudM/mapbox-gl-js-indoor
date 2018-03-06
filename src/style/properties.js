@@ -472,6 +472,7 @@ type PossiblyEvaluatedPropertyValues<Props: Object>
 /**
  * `PossiblyEvaluated` stores a map of all (property name, `R`) pairs for paint or layout properties of a
  * given layer type.
+ * @private
  */
 class PossiblyEvaluated<Props: Object> {
     _properties: Properties<Props>;
@@ -525,17 +526,12 @@ class DataConstantProperty<T> implements Property<T, T> {
  */
 class DataDrivenProperty<T> implements Property<T, PossiblyEvaluatedPropertyValue<T>> {
     specification: StylePropertySpecification;
-    useIntegerZoom: boolean;
 
-    constructor(specification: StylePropertySpecification, useIntegerZoom: boolean = false) {
+    constructor(specification: StylePropertySpecification) {
         this.specification = specification;
-        this.useIntegerZoom = useIntegerZoom;
     }
 
     possiblyEvaluate(value: PropertyValue<T, PossiblyEvaluatedPropertyValue<T>>, parameters: EvaluationParameters): PossiblyEvaluatedPropertyValue<T> {
-        if (this.useIntegerZoom) {
-            parameters = extend({}, parameters, {zoom: Math.floor(parameters.zoom)});
-        }
         if (value.expression.kind === 'constant' || value.expression.kind === 'camera') {
             return new PossiblyEvaluatedPropertyValue(this, {kind: 'constant', value: value.expression.evaluate(parameters)}, parameters);
         } else {
@@ -551,9 +547,16 @@ class DataDrivenProperty<T> implements Property<T, PossiblyEvaluatedPropertyValu
             return a;
         }
 
-        // Special case hack solely for fill-outline-color.
-        if (a.value.value === undefined || a.value.value === undefined)
-            return (undefined: any);
+        // Special case hack solely for fill-outline-color. The undefined value is subsequently handled in
+        // FillStyleLayer#recalculate, which sets fill-outline-color to the fill-color value if the former
+        // is a PossiblyEvaluatedPropertyValue containing a constant undefined value. In addition to the
+        // return value here, the other source of a PossiblyEvaluatedPropertyValue containing a constant
+        // undefined value is the "default value" for fill-outline-color held in
+        // `Properties#defaultPossiblyEvaluatedValues`, which serves as the prototype of
+        // `PossiblyEvaluated#_values`.
+        if (a.value.value === undefined || b.value.value === undefined) {
+            return new PossiblyEvaluatedPropertyValue(this, {kind: 'constant', value: (undefined: any)}, a.globals);
+        }
 
         const interp: ?(a: T, b: T, t: number) => T = (interpolate: any)[this.specification.type];
         if (interp) {
@@ -564,9 +567,6 @@ class DataDrivenProperty<T> implements Property<T, PossiblyEvaluatedPropertyValu
     }
 
     evaluate(value: PossiblyEvaluatedValue<T>, globals: GlobalProperties, feature: Feature): T {
-        if (this.useIntegerZoom) {
-            globals = extend({}, globals, {zoom: Math.floor(globals.zoom)});
-        }
         if (value.kind === 'constant') {
             return value.value;
         } else {

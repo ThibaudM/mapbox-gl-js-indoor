@@ -13,7 +13,7 @@ if (process.argv[1] === __filename && process.argv.length > 2) {
 }
 
 expressionSuite.run('js', { ignores, tests }, (fixture) => {
-    const spec = fixture.propertySpec || {};
+    const spec = Object.assign({}, fixture.propertySpec);
     spec['function'] = true;
     spec['property-function'] = true;
 
@@ -39,13 +39,13 @@ expressionSuite.run('js', { ignores, tests }, (fixture) => {
         outputs,
         compiled: {
             result: 'success',
-            isZoomConstant: expression.kind === 'constant' || expression.kind === 'source',
             isFeatureConstant: expression.kind === 'constant' || expression.kind === 'camera',
+            isZoomConstant: expression.kind === 'constant' || expression.kind === 'source',
             type: toString(type)
         }
     };
 
-    for (const input of fixture.inputs) {
+    for (const input of fixture.inputs || []) {
         try {
             const feature = { properties: input[1].properties || {} };
             if ('id' in input[1]) {

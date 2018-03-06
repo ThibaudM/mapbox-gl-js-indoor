@@ -4,7 +4,6 @@ const {HTMLImageElement, HTMLCanvasElement, HTMLVideoElement, ImageData} = requi
 
 import type Context from '../gl/context';
 import type {RGBAImage, AlphaImage} from '../util/image';
-import type {ImageTextureSource} from '../source/image_source';
 
 export type TextureFormat =
     | $PropertyType<WebGLRenderingContext, 'RGBA'>
@@ -18,10 +17,20 @@ export type TextureWrap =
     | $PropertyType<WebGLRenderingContext, 'CLAMP_TO_EDGE'>
     | $PropertyType<WebGLRenderingContext, 'MIRRORED_REPEAT'>;
 
+type EmptyImage = {
+    width: number,
+    height: number,
+    data: null
+}
+
 export type TextureImage =
     | RGBAImage
     | AlphaImage
-    | ImageTextureSource;
+    | HTMLImageElement
+    | HTMLCanvasElement
+    | HTMLVideoElement
+    | ImageData
+    | EmptyImage;
 
 class Texture {
     context: Context;

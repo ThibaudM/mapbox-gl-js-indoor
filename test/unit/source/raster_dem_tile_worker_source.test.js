@@ -3,6 +3,7 @@
 const test = require('mapbox-gl-js-test').test;
 const RasterDEMTileWorkerSource = require('../../../src/source/raster_dem_tile_worker_source');
 const StyleLayerIndex = require('../../../src/style/style_layer_index');
+const {DEMData} = require('../../../src/data/dem_data');
 
 test('loadTile', (t) => {
     t.test('loads DEM tile', (t) => {
@@ -15,8 +16,8 @@ test('loadTile', (t) => {
             dim: 256
         }, (err, data)=>{
             if (err) t.fail();
-            t.deepEqual(source.loading, { source: {} });
-            t.deepEqual(Object.keys(data.properties), ['uid', 'scale', 'level', 'loaded' ], 'returns serialized DEM data');
+            t.deepEqual(source.loading, {});
+            t.ok(data instanceof DEMData, 'returns DEM data');
 
             t.end();
         });
@@ -30,9 +31,7 @@ test('removeTile', (t) => {
         const source = new RasterDEMTileWorkerSource(null, new StyleLayerIndex());
 
         source.loaded = {
-            source: {
-                '0': {}
-            }
+            '0': {}
         };
 
         source.removeTile({
@@ -40,10 +39,9 @@ test('removeTile', (t) => {
             uid: 0
         });
 
-        t.deepEqual(source.loaded, { source: {} });
+        t.deepEqual(source.loaded, {});
         t.end();
     });
 
     t.end();
 });
-

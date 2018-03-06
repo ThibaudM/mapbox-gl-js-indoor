@@ -4,6 +4,7 @@ const ajax =  require('../src/util/ajax');
 const request = require('request');
 const PNG = require('pngjs').PNG;
 const Map = require('../src/ui/map');
+const config = require('../src/util/config');
 const window = require('../src/util/window');
 const browser = require('../src/util/browser');
 const rtlTextPlugin = require('../src/source/rtl_text_plugin');
@@ -16,8 +17,14 @@ rtlTextPlugin['processBidirectionalText'] = rtlText.processBidirectionalText;
 
 module.exports = function(style, options, _callback) {
     let wasCallbackCalled = false;
+
+    const timeout = setTimeout(() => {
+        callback(new Error('Test timed out'));
+    }, options.timeout || 20000);
+
     function callback() {
         if (!wasCallbackCalled) {
+            clearTimeout(timeout);
             wasCallbackCalled = true;
             _callback.apply(this, arguments);
         }
@@ -28,6 +35,9 @@ module.exports = function(style, options, _callback) {
     const container = window.document.createElement('div');
     Object.defineProperty(container, 'offsetWidth', {value: options.width});
     Object.defineProperty(container, 'offsetHeight', {value: options.height});
+
+    // We are self-hosting test files.
+    config.REQUIRE_ACCESS_TOKEN = false;
 
     const map = new Map({
         container: container,

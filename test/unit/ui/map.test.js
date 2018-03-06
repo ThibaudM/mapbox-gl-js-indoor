@@ -7,6 +7,7 @@ const Map = require('../../../src/ui/map');
 const LngLat = require('../../../src/geo/lng_lat');
 const Tile = require('../../../src/source/tile');
 const OverscaledTileID = require('../../../src/source/tile_id').OverscaledTileID;
+const {Event, ErrorEvent} = require('../../../src/util/evented');
 
 const fixed = require('mapbox-gl-js-test/fixed');
 const fixedNum = fixed.Num;
@@ -153,9 +154,9 @@ test('Map', (t) => {
                 map.on('data', recordEvent);
                 map.on('dataloading', recordEvent);
 
-                map.style.fire('error');
-                map.style.fire('data');
-                map.style.fire('dataloading');
+                map.style.fire(new Event('error'));
+                map.style.fire(new Event('data'));
+                map.style.fire(new Event('dataloading'));
 
                 t.deepEqual(events, [
                     'error',
@@ -181,12 +182,12 @@ test('Map', (t) => {
                 map.on('tiledata', recordEvent);
                 map.on('tiledataloading', recordEvent);
 
-                map.style.fire('data', {dataType: 'style'});
-                map.style.fire('dataloading', {dataType: 'style'});
-                map.style.fire('data', {dataType: 'source'});
-                map.style.fire('dataloading', {dataType: 'source'});
-                map.style.fire('data', {dataType: 'tile'});
-                map.style.fire('dataloading', {dataType: 'tile'});
+                map.style.fire(new Event('data', {dataType: 'style'}));
+                map.style.fire(new Event('dataloading', {dataType: 'style'}));
+                map.style.fire(new Event('data', {dataType: 'source'}));
+                map.style.fire(new Event('dataloading', {dataType: 'source'}));
+                map.style.fire(new Event('data', {dataType: 'tile'}));
+                map.style.fire(new Event('dataloading', {dataType: 'tile'}));
 
                 t.deepEqual(events, [
                     'styledata',
@@ -659,6 +660,54 @@ test('Map', (t) => {
             const bounds = [[-130.4297, 50.0642], [-61.52344, 24.20688]];
             map.setMaxBounds(bounds);
             t.deepEqual(map.getMaxBounds().toArray(), bounds);
+            t.end();
+        });
+
+        t.end();
+    });
+
+    t.test('#getRenderWorldCopies', (t) => {
+        t.test('initially false', (t) => {
+            const map = createMap({renderWorldCopies: false});
+            t.equal(map.getRenderWorldCopies(), false);
+            t.end();
+        });
+
+        t.test('initially true', (t) => {
+            const map = createMap({renderWorldCopies: true});
+            t.equal(map.getRenderWorldCopies(), true);
+            t.end();
+        });
+
+        t.end();
+    });
+
+    t.test('#setRenderWorldCopies', (t) => {
+        t.test('initially false', (t) => {
+            const map = createMap({renderWorldCopies: false});
+            map.setRenderWorldCopies(true);
+            t.equal(map.getRenderWorldCopies(), true);
+            t.end();
+        });
+
+        t.test('initially true', (t) => {
+            const map = createMap({renderWorldCopies: true});
+            map.setRenderWorldCopies(false);
+            t.equal(map.getRenderWorldCopies(), false);
+            t.end();
+        });
+
+        t.test('undefined', (t) => {
+            const map = createMap({renderWorldCopies: false});
+            map.setRenderWorldCopies(undefined);
+            t.equal(map.getRenderWorldCopies(), true);
+            t.end();
+        });
+
+        t.test('null', (t) => {
+            const map = createMap({renderWorldCopies: true});
+            map.setRenderWorldCopies(null);
+            t.equal(map.getRenderWorldCopies(), false);
             t.end();
         });
 
@@ -1173,7 +1222,7 @@ test('Map', (t) => {
             const map = createMap();
             const stub = t.stub(console, 'error');
             const error = new Error('test');
-            map.fire('error', {error});
+            map.fire(new ErrorEvent(error));
             t.ok(stub.calledOnce);
             t.equal(stub.getCall(0).args[0], error);
             t.end();
@@ -1186,7 +1235,7 @@ test('Map', (t) => {
                 t.equal(event.error, error);
                 t.end();
             });
-            map.fire('error', {error});
+            map.fire(new ErrorEvent(error));
         });
 
         t.end();
@@ -1249,23 +1298,6 @@ test('Map', (t) => {
                 }
             });
         });
-    });
-
-    t.test('Map#isMoving', (t) => {
-        t.plan(3);
-        const map = createMap();
-
-        t.equal(map.isMoving(), false, 'false before moving');
-
-        map.on('movestart', () => {
-            t.equal(map.isMoving(), true, 'true on movestart');
-        });
-
-        map.on('moveend', () => {
-            t.equal(map.isMoving(), false, 'false on moveend');
-        });
-
-        map.zoomTo(5, { duration: 0 });
     });
 
     t.end();
