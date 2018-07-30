@@ -418,6 +418,23 @@ CompoundExpression.register(expressions, {
         StringType,
         varargs(StringType),
         (ctx, args) => args.map(arg => arg.evaluate(ctx)).join('')
+    ],
+    'inrange': [
+        BooleanType,
+        [StringType, StringType],
+        (ctx, [r, s]) => {
+            const m = RegExp("(-?\\d+);(-?\\d+)", "g").exec(r.evaluate(ctx));
+
+            if (m == null) return false;
+            if (m.length != 3) return false;
+            
+            const min = parseInt(m[1]);
+            const max = parseInt(m[2]);
+            if (max < min) return false;
+
+            const se = s.evaluate(ctx);
+            return se >= min && se <= max;
+        }
     ]
 });
 
