@@ -1,16 +1,18 @@
 // @flow
 
-const DOM = require('../../util/dom');
-const util = require('../../util/util');
-const browser = require('../../util/browser');
-const window = require('../../util/window');
-const interpolate = require('../../style-spec/util/interpolate').number;
-const LngLat = require('../../geo/lng_lat');
-const {Event} = require('../../util/evented');
+import assert from 'assert';
+import DOM from '../../util/dom';
+
+import { ease as _ease, bindAll, bezier } from '../../util/util';
+import browser from '../../util/browser';
+import window from '../../util/window';
+import { number as interpolate } from '../../style-spec/util/interpolate';
+import LngLat from '../../geo/lng_lat';
+import { Event } from '../../util/evented';
 
 import type Map from '../map';
 import type Point from '@mapbox/point-geometry';
-import type Transform from '../../geo/transform';
+import type {TaskID} from '../../util/task_queue';
 
 // deltaY value for mouse scroll wheel identification
 const wheelZoomDelta = 4.000244140625;
@@ -36,17 +38,19 @@ class ScrollZoomHandler {
     _aroundPoint: Point;
     _type: 'wheel' | 'trackpad' | null;
     _lastValue: number;
-    _timeout: ?number; // used for delayed-handling of a single wheel movement
-    _finishTimeout: ?number; // used to delay final '{move,zoom}end' events
+    _timeout: ?TimeoutID; // used for delayed-handling of a single wheel movement
+    _finishTimeout: ?TimeoutID; // used to delay final '{move,zoom}end' events
 
     _lastWheelEvent: any;
     _lastWheelEventTime: number;
 
-    _startZoom: number;
-    _targetZoom: number;
+    _startZoom: ?number;
+    _targetZoom: ?number;
     _delta: number;
-    _easing: (number) => number;
-    _prevEase: {start: number, duration: number, easing: (number) => number};
+    _easing: ?((number) => number);
+    _prevEase: ?{start: number, duration: number, easing: (number) => number};
+
+    _frameId: ?TaskID;
 
     /**
      * @private
@@ -57,7 +61,7 @@ class ScrollZoomHandler {
 
         this._delta = 0;
 
-        util.bindAll([
+        bindAll([
             '_onWheel',
             '_onTimeout',
             '_onScrollFrame',
@@ -172,20 +176,32 @@ class ScrollZoomHandler {
     _start(e: any) {
         if (!this._delta) return;
 
+        if (this._frameId) {
+            this._map._cancelRenderFrame(this._frameId);
+            this._frameId = null;
+        }
+
         this._active = true;
         this._map.fire(new Event('movestart', {originalEvent: e}));
         this._map.fire(new Event('zoomstart', {originalEvent: e}));
-        clearTimeout(this._finishTimeout);
+        if (this._finishTimeout) {
+            clearTimeout(this._finishTimeout);
+        }
 
         const pos = DOM.mousePos(this._el, e);
 
         this._around = LngLat.convert(this._aroundCenter ? this._map.getCenter() : this._map.unproject(pos));
         this._aroundPoint = this._map.transform.locationPoint(this._around);
-        this._map._startAnimation(this._onScrollFrame, this._onScrollFinished);
+        if (!this._frameId) {
+            this._frameId = this._map._requestRenderFrame(this._onScrollFrame);
+        }
     }
 
-    _onScrollFrame(tr: Transform) {
+    _onScrollFrame() {
+        this._frameId = null;
+
         if (!this.isActive()) return;
+        const tr = this._map.transform;
 
         // if we've had scroll events since the last render frame, consume the
         // accumulated delta, and update the target zoom level accordingly
@@ -213,34 +229,47 @@ class ScrollZoomHandler {
             this._delta = 0;
         }
 
-        if (this._type === 'wheel') {
+        const targetZoom = typeof this._targetZoom === 'number' ?
+            this._targetZoom : tr.zoom;
+        const startZoom = this._startZoom;
+        const easing = this._easing;
+
+        let finished = false;
+        if (this._type === 'wheel' && startZoom && easing) {
+            assert(easing && typeof startZoom === 'number');
+
             const t = Math.min((browser.now() - this._lastWheelEventTime) / 200, 1);
-            const k = this._easing(t);
-            tr.zoom = interpolate(this._startZoom, this._targetZoom, k);
-            if (t === 1) this._map.stop();
+            const k = easing(t);
+            tr.zoom = interpolate(startZoom, targetZoom, k);
+            if (t < 1) {
+                if (!this._frameId) {
+                    this._frameId = this._map._requestRenderFrame(this._onScrollFrame);
+                }
+            } else {
+                finished = true;
+            }
         } else {
-            tr.zoom = this._targetZoom;
-            this._map.stop();
+            tr.zoom = targetZoom;
+            finished = true;
         }
 
         tr.setLocationAtPoint(this._around, this._aroundPoint);
 
         this._map.fire(new Event('move', {originalEvent: this._lastWheelEvent}));
         this._map.fire(new Event('zoom', {originalEvent: this._lastWheelEvent}));
-    }
 
-    _onScrollFinished() {
-        if (!this.isActive()) return;
-        this._active = false;
-        this._finishTimeout = setTimeout(() => {
-            this._map.fire(new Event('zoomend', {originalEvent: this._lastWheelEvent}));
-            this._map.fire(new Event('moveend', {originalEvent: this._lastWheelEvent}));
-            delete this._targetZoom;
-        }, 200);
+        if (finished) {
+            this._active = false;
+            this._finishTimeout = setTimeout(() => {
+                this._map.fire(new Event('zoomend', {originalEvent: this._lastWheelEvent}));
+                this._map.fire(new Event('moveend', {originalEvent: this._lastWheelEvent}));
+                delete this._targetZoom;
+            }, 200);
+        }
     }
 
     _smoothOutEasing(duration: number) {
-        let easing = util.ease;
+        let easing = _ease;
 
         if (this._prevEase) {
             const ease = this._prevEase,
@@ -251,7 +280,7 @@ class ScrollZoomHandler {
                 x = 0.27 / Math.sqrt(speed * speed + 0.0001) * 0.01,
                 y = Math.sqrt(0.27 * 0.27 - x * x);
 
-            easing = util.bezier(x, y, 0.25, 1);
+            easing = bezier(x, y, 0.25, 1);
         }
 
         this._prevEase = {
@@ -264,4 +293,4 @@ class ScrollZoomHandler {
     }
 }
 
-module.exports = ScrollZoomHandler;
+export default ScrollZoomHandler;

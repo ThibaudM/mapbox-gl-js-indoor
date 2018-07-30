@@ -1,21 +1,19 @@
 // @flow
 
-const StyleLayer = require('../style_layer');
-const FillBucket = require('../../data/bucket/fill_bucket');
-const {multiPolygonIntersectsMultiPolygon} = require('../../util/intersection_tests');
-const {translateDistance, translate} = require('../query_utils');
-const properties = require('./fill_style_layer_properties');
+import StyleLayer from '../style_layer';
 
-const {
-    Transitionable,
-    Transitioning,
-    PossiblyEvaluated
-} = require('../properties');
+import FillBucket from '../../data/bucket/fill_bucket';
+import { multiPolygonIntersectsMultiPolygon } from '../../util/intersection_tests';
+import { translateDistance, translate } from '../query_utils';
+import properties from './fill_style_layer_properties';
+import { Transitionable, Transitioning, PossiblyEvaluated } from '../properties';
 
+import type { FeatureState } from '../../style-spec/expression';
 import type {BucketParameters} from '../../data/bucket';
 import type Point from '@mapbox/point-geometry';
 import type {PaintProps} from './fill_style_layer_properties';
 import type EvaluationParameters from '../evaluation_parameters';
+import type Transform from '../../geo/transform';
 
 class FillStyleLayer extends StyleLayer {
     _transitionablePaint: Transitionable<PaintProps>;
@@ -45,16 +43,17 @@ class FillStyleLayer extends StyleLayer {
 
     queryIntersectsFeature(queryGeometry: Array<Array<Point>>,
                            feature: VectorTileFeature,
+                           featureState: FeatureState,
                            geometry: Array<Array<Point>>,
                            zoom: number,
-                           bearing: number,
+                           transform: Transform,
                            pixelsToTileUnits: number): boolean {
         const translatedPolygon = translate(queryGeometry,
             this.paint.get('fill-translate'),
             this.paint.get('fill-translate-anchor'),
-            bearing, pixelsToTileUnits);
+            transform.angle, pixelsToTileUnits);
         return multiPolygonIntersectsMultiPolygon(translatedPolygon, geometry);
     }
 }
 
-module.exports = FillStyleLayer;
+export default FillStyleLayer;

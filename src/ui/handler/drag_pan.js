@@ -1,18 +1,18 @@
 // @flow
 
-const DOM = require('../../util/dom');
-const util = require('../../util/util');
-const window = require('../../util/window');
-const browser = require('../../util/browser');
-const {Event} = require('../../util/evented');
-const assert = require('assert');
+import DOM from '../../util/dom';
+import { bezier, bindAll } from '../../util/util';
+import window from '../../util/window';
+import browser from '../../util/browser';
+import { Event } from '../../util/evented';
+import assert from 'assert';
 
 import type Map from '../map';
 import type Point from '@mapbox/point-geometry';
-import type Transform from '../../geo/transform';
+import type {TaskID} from '../../util/task_queue';
 
 const inertiaLinearity = 0.3,
-    inertiaEasing = util.bezier(0, 0, inertiaLinearity, 1),
+    inertiaEasing = bezier(0, 0, inertiaLinearity, 1),
     inertiaMaxSpeed = 1400, // px/s
     inertiaDeceleration = 2500; // px/s^2
 
@@ -24,20 +24,26 @@ class DragPanHandler {
     _map: Map;
     _el: HTMLElement;
     _state: 'disabled' | 'enabled' | 'pending' | 'active';
-    _pos: Point;
-    _previousPos: Point;
-    _inertia: Array<[number, Point]>;
+    _startPos: Point;
+    _mouseDownPos: Point;
+    _lastPos: Point;
     _lastMoveEvent: MouseEvent | TouchEvent | void;
+    _inertia: Array<[number, Point]>;
+    _frameId: ?TaskID;
+    _clickTolerance: number;
 
     /**
      * @private
      */
-    constructor(map: Map) {
+    constructor(map: Map, options: {
+        clickTolerance?: number
+    }) {
         this._map = map;
         this._el = map.getCanvasContainer();
         this._state = 'disabled';
+        this._clickTolerance = options.clickTolerance || 1;
 
-        util.bindAll([
+        bindAll([
             '_onMove',
             '_onMouseUp',
             '_onTouchEnd',
@@ -139,17 +145,22 @@ class DragPanHandler {
         window.addEventListener('blur', this._onBlur);
 
         this._state = 'pending';
-        this._previousPos = DOM.mousePos(this._el, e);
-        this._inertia = [[browser.now(), this._previousPos]];
+        this._startPos = this._mouseDownPos = this._lastPos = DOM.mousePos(this._el, e);
+        this._inertia = [[browser.now(), this._startPos]];
     }
 
     _onMove(e: MouseEvent | TouchEvent) {
-        this._lastMoveEvent = e;
         e.preventDefault();
 
-        this._pos = DOM.mousePos(this._el, e);
+        const pos = DOM.mousePos(this._el, e);
+        if (this._lastPos.equals(pos) || (this._state === 'pending' && pos.dist(this._mouseDownPos) < this._clickTolerance)) {
+            return;
+        }
+
+        this._lastMoveEvent = e;
+        this._lastPos = pos;
         this._drainInertiaBuffer();
-        this._inertia.push([browser.now(), this._pos]);
+        this._inertia.push([browser.now(), this._lastPos]);
 
         if (this._state === 'pending') {
             // we treat the first move event (rather than the mousedown event)
@@ -159,22 +170,26 @@ class DragPanHandler {
             this._fireEvent('movestart', e);
         }
 
-        this._map._startAnimation(this._onDragFrame);
+        if (!this._frameId) {
+            this._frameId = this._map._requestRenderFrame(this._onDragFrame);
+        }
     }
 
     /**
      * Called in each render frame while dragging is happening.
      * @private
      */
-    _onDragFrame(tr: Transform) {
+    _onDragFrame() {
+        this._frameId = null;
+
         const e = this._lastMoveEvent;
         if (!e) return;
-
-        tr.setLocationAtPoint(tr.pointLocation(this._previousPos), this._pos);
+        const tr = this._map.transform;
+        tr.setLocationAtPoint(tr.pointLocation(this._startPos), this._lastPos);
         this._fireEvent('drag', e);
         this._fireEvent('move', e);
 
-        this._previousPos = this._pos;
+        this._startPos = this._lastPos;
         delete this._lastMoveEvent;
     }
 
@@ -244,9 +259,14 @@ class DragPanHandler {
     }
 
     _deactivate() {
+        if (this._frameId) {
+            this._map._cancelRenderFrame(this._frameId);
+            this._frameId = null;
+        }
         delete this._lastMoveEvent;
-        delete this._previousPos;
-        delete this._pos;
+        delete this._startPos;
+        delete this._mouseDownPos;
+        delete this._lastPos;
     }
 
     _inertialPan(e: MouseEvent | TouchEvent) {
@@ -301,4 +321,4 @@ class DragPanHandler {
     }
 }
 
-module.exports = DragPanHandler;
+export default DragPanHandler;

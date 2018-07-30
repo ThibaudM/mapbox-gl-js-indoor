@@ -1,28 +1,31 @@
 // @flow
 
-const {
-    MapMouseEvent,
-    MapTouchEvent,
-    MapWheelEvent
-} = require('../ui/events');
-const DOM = require('../util/dom');
-
+import { MapMouseEvent, MapTouchEvent, MapWheelEvent } from '../ui/events';
+import DOM from '../util/dom';
 import type Map from './map';
+import scrollZoom from './handler/scroll_zoom';
+import boxZoom from './handler/box_zoom';
+import dragRotate from './handler/drag_rotate';
+import dragPan from './handler/drag_pan';
+import keyboard from './handler/keyboard';
+import doubleClickZoom from './handler/dblclick_zoom';
+import touchZoomRotate from './handler/touch_zoom_rotate';
 
 const handlers = {
-    scrollZoom: require('./handler/scroll_zoom'),
-    boxZoom: require('./handler/box_zoom'),
-    dragRotate: require('./handler/drag_rotate'),
-    dragPan: require('./handler/drag_pan'),
-    keyboard: require('./handler/keyboard'),
-    doubleClickZoom: require('./handler/dblclick_zoom'),
-    touchZoomRotate: require('./handler/touch_zoom_rotate')
+    scrollZoom,
+    boxZoom,
+    dragRotate,
+    dragPan,
+    keyboard,
+    doubleClickZoom,
+    touchZoomRotate
 };
 
-module.exports = function bindHandlers(map: Map, options: {}) {
+export default function bindHandlers(map: Map, options: {interactive: boolean, clickTolerance: number}) {
     const el = map.getCanvasContainer();
     let contextMenuEvent = null;
     let mouseDown = false;
+    let startPos = null;
 
     for (const name in handlers) {
         (map: any)[name] = new handlers[name](map, options);
@@ -36,9 +39,16 @@ module.exports = function bindHandlers(map: Map, options: {}) {
     DOM.addEventListener(el, 'mouseup', onMouseUp);
     DOM.addEventListener(el, 'mousemove', onMouseMove);
     DOM.addEventListener(el, 'mouseover', onMouseOver);
+
+    // Bind touchstart and touchmove with passive: false because, even though
+    // they only fire a map events and therefore could theoretically be
+    // passive, binding with passive: true causes iOS not to respect
+    // e.preventDefault() in _other_ handlers, even if they are non-passive
+    // (see https://bugs.webkit.org/show_bug.cgi?id=184251)
     DOM.addEventListener(el, 'touchstart', onTouchStart, {passive: false});
-    DOM.addEventListener(el, 'touchmove', onTouchMove, {passive: true}); // `passive: true` because onTouchMove only sends a map event.
-    DOM.addEventListener(el, 'touchend', onTouchEnd);                    // The real action is in DragPanHandler and TouchZoomRotateHandler.
+    DOM.addEventListener(el, 'touchmove', onTouchMove, {passive: false});
+
+    DOM.addEventListener(el, 'touchend', onTouchEnd);
     DOM.addEventListener(el, 'touchcancel', onTouchCancel);
     DOM.addEventListener(el, 'click', onClick);
     DOM.addEventListener(el, 'dblclick', onDblClick);
@@ -47,6 +57,7 @@ module.exports = function bindHandlers(map: Map, options: {}) {
 
     function onMouseDown(e: MouseEvent) {
         mouseDown = true;
+        startPos = DOM.mousePos(el, e);
 
         const mapEvent = new MapMouseEvent('mousedown', map, e);
         map.fire(mapEvent);
@@ -55,7 +66,7 @@ module.exports = function bindHandlers(map: Map, options: {}) {
             return;
         }
 
-        if (!map.doubleClickZoom.isActive()) {
+        if (options.interactive && !map.doubleClickZoom.isActive()) {
             map.stop();
         }
 
@@ -88,7 +99,7 @@ module.exports = function bindHandlers(map: Map, options: {}) {
         if (map.dragPan.isActive()) return;
         if (map.dragRotate.isActive()) return;
 
-        let target: any = e.toElement || e.target;
+        let target: ?Node = (e.target: any);
         while (target && target !== el) target = target.parentNode;
         if (target !== el) return;
 
@@ -96,7 +107,7 @@ module.exports = function bindHandlers(map: Map, options: {}) {
     }
 
     function onMouseOver(e: MouseEvent) {
-        let target: any = e.toElement || e.target;
+        let target: ?Node = (e.target: any);
         while (target && target !== el) target = target.parentNode;
         if (target !== el) return;
 
@@ -115,7 +126,9 @@ module.exports = function bindHandlers(map: Map, options: {}) {
             return;
         }
 
-        map.stop();
+        if (options.interactive) {
+            map.stop();
+        }
 
         if (!map.boxZoom.isActive() && !map.dragRotate.isActive()) {
             map.dragPan.onTouchStart(e);
@@ -138,7 +151,10 @@ module.exports = function bindHandlers(map: Map, options: {}) {
     }
 
     function onClick(e: MouseEvent) {
-        map.fire(new MapMouseEvent('click', map, e));
+        const pos = DOM.mousePos(el, e);
+        if (pos.equals(startPos) || pos.dist(startPos) < options.clickTolerance) {
+            map.fire(new MapMouseEvent('click', map, e));
+        }
     }
 
     function onDblClick(e: MouseEvent) {
@@ -166,6 +182,10 @@ module.exports = function bindHandlers(map: Map, options: {}) {
     }
 
     function onWheel(e: WheelEvent) {
+        if (options.interactive) {
+            map.stop();
+        }
+
         const mapEvent = new MapWheelEvent('wheel', map, e);
         map.fire(mapEvent);
 
@@ -175,4 +195,4 @@ module.exports = function bindHandlers(map: Map, options: {}) {
 
         map.scrollZoom.onWheel(e);
     }
-};
+}

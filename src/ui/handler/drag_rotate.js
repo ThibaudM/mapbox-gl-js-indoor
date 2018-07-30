@@ -1,18 +1,19 @@
 // @flow
 
-const DOM = require('../../util/dom');
-const util = require('../../util/util');
-const window = require('../../util/window');
-const browser = require('../../util/browser');
-const {Event} = require('../../util/evented');
-const assert = require('assert');
+import DOM from '../../util/dom';
+
+import { bezier, bindAll } from '../../util/util';
+import window from '../../util/window';
+import browser from '../../util/browser';
+import { Event } from '../../util/evented';
+import assert from 'assert';
 
 import type Map from '../map';
 import type Point from '@mapbox/point-geometry';
-import type Transform from '../../geo/transform';
+import type {TaskID} from '../../util/task_queue';
 
 const inertiaLinearity = 0.25,
-    inertiaEasing = util.bezier(0, 0, inertiaLinearity, 1),
+    inertiaEasing = bezier(0, 0, inertiaLinearity, 1),
     inertiaMaxSpeed = 180, // deg/s
     inertiaDeceleration = 720; // deg/s^2
 
@@ -29,11 +30,12 @@ class DragRotateHandler {
     _bearingSnap: number;
     _pitchWithRotate: boolean;
 
+    _startPos: Point;
+    _lastPos: Point;
     _lastMoveEvent: MouseEvent;
-    _pos: Point;
-    _previousPos: Point;
     _inertia: Array<[number, number]>;
     _center: Point;
+    _frameId: ?TaskID;
 
     /**
      * @param {Map} map The Mapbox GL JS map to add the handler to.
@@ -56,7 +58,8 @@ class DragRotateHandler {
         this._bearingSnap = options.bearingSnap || 0;
         this._pitchWithRotate = options.pitchWithRotate !== false;
 
-        util.bindAll([
+        bindAll([
+            'onMouseDown',
             '_onMouseMove',
             '_onMouseUp',
             '_onBlur',
@@ -149,15 +152,20 @@ class DragRotateHandler {
 
         this._state = 'pending';
         this._inertia = [[browser.now(), this._map.getBearing()]];
-        this._previousPos = DOM.mousePos(this._el, e);
+        this._startPos = this._lastPos = DOM.mousePos(this._el, e);
         this._center = this._map.transform.centerPoint;  // Center of rotation
 
         e.preventDefault();
     }
 
     _onMouseMove(e: MouseEvent) {
+        const pos = DOM.mousePos(this._el, e);
+        if (this._lastPos.equals(pos)) {
+            return;
+        }
+
         this._lastMoveEvent = e;
-        this._pos = DOM.mousePos(this._el, e);
+        this._lastPos = pos;
 
         if (this._state === 'pending') {
             this._state = 'active';
@@ -168,15 +176,20 @@ class DragRotateHandler {
             }
         }
 
-        this._map._startAnimation(this._onDragFrame);
+        if (!this._frameId) {
+            this._frameId = this._map._requestRenderFrame(this._onDragFrame);
+        }
     }
 
-    _onDragFrame(tr: Transform) {
+    _onDragFrame() {
+        this._frameId = null;
+
         const e = this._lastMoveEvent;
         if (!e) return;
+        const tr = this._map.transform;
 
-        const p1 = this._previousPos,
-            p2 = this._pos,
+        const p1 = this._startPos,
+            p2 = this._lastPos,
             bearingDiff = (p1.x - p2.x) * 0.8,
             pitchDiff = (p1.y - p2.y) * -0.5,
             bearing = tr.bearing - bearingDiff,
@@ -197,7 +210,7 @@ class DragRotateHandler {
         this._fireEvent('move', e);
 
         delete this._lastMoveEvent;
-        this._previousPos = this._pos;
+        this._startPos = this._lastPos;
     }
 
     _onMouseUp(e: MouseEvent) {
@@ -250,8 +263,13 @@ class DragRotateHandler {
     }
 
     _deactivate() {
+        if (this._frameId) {
+            this._map._cancelRenderFrame(this._frameId);
+            this._frameId = null;
+        }
         delete this._lastMoveEvent;
-        delete this._previousPos;
+        delete this._startPos;
+        delete this._lastPos;
     }
 
     _inertialRotate(e: MouseEvent) {
@@ -324,4 +342,4 @@ class DragRotateHandler {
     }
 }
 
-module.exports = DragRotateHandler;
+export default DragRotateHandler;

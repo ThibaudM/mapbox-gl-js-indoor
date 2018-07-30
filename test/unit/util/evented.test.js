@@ -1,7 +1,5 @@
-'use strict';
-
-const test = require('mapbox-gl-js-test').test;
-const {Event, Evented} = require('../../../src/util/evented');
+import { test } from 'mapbox-gl-js-test';
+import { Event, Evented } from '../../../src/util/evented';
 
 test('Evented', (t) => {
 
@@ -108,6 +106,29 @@ test('Evented', (t) => {
             evented.on('a', t.fail.bind(t));
         });
         evented.fire(new Event('a'));
+        t.end();
+    });
+
+    t.test('has backward compatibility for fire(string, object) API', (t) => {
+        const evented = new Evented();
+        const listener = t.spy();
+        evented.on('a', listener);
+        evented.fire('a', {foo: 'bar'});
+        t.ok(listener.calledOnce);
+        t.ok(listener.firstCall.args[0].foo, 'bar');
+        t.end();
+    });
+
+    t.test('on is idempotent', (t) => {
+        const evented = new Evented();
+        const listenerA = t.spy();
+        const listenerB = t.spy();
+        evented.on('a', listenerA);
+        evented.on('a', listenerB);
+        evented.on('a', listenerA);
+        evented.fire(new Event('a'));
+        t.ok(listenerA.calledOnce);
+        t.ok(listenerA.calledBefore(listenerB));
         t.end();
     });
 

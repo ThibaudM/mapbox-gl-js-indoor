@@ -1,6 +1,6 @@
 // @flow
 
-const util = require('../../util/util');
+import { bindAll } from '../../util/util';
 
 import type Map from '../map';
 import type {MapMouseEvent, MapTouchEvent} from '../events';
@@ -13,7 +13,7 @@ class DoubleClickZoomHandler {
     _map: Map;
     _enabled: boolean;
     _active: boolean;
-    _tapped: ?number;
+    _tapped: ?TimeoutID;
 
     /**
      * @private
@@ -21,7 +21,7 @@ class DoubleClickZoomHandler {
     constructor(map: Map) {
         this._map = map;
 
-        util.bindAll([
+        bindAll([
             '_onDblClick',
             '_onZoomEnd'
         ], this);
@@ -102,4 +102,4 @@ class DoubleClickZoomHandler {
     }
 }
 
-module.exports = DoubleClickZoomHandler;
+export default DoubleClickZoomHandler;

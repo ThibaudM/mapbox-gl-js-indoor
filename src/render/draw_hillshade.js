@@ -1,17 +1,18 @@
 // @flow
-const Coordinate = require('../geo/coordinate');
-const Texture = require('./texture');
-const EXTENT = require('../data/extent');
-const mat4 = require('@mapbox/gl-matrix').mat4;
-const StencilMode = require('../gl/stencil_mode');
-const DepthMode = require('../gl/depth_mode');
+import Coordinate from '../geo/coordinate';
+
+import Texture from './texture';
+import EXTENT from '../data/extent';
+import { mat4 } from 'gl-matrix';
+import StencilMode from '../gl/stencil_mode';
+import DepthMode from '../gl/depth_mode';
 
 import type Painter from './painter';
 import type SourceCache from '../source/source_cache';
 import type HillshadeStyleLayer from '../style/style_layer/hillshade_style_layer';
 import type {OverscaledTileID} from '../source/tile_id';
 
-module.exports = drawHillshade;
+export default drawHillshade;
 
 function drawHillshade(painter: Painter, sourceCache: SourceCache, layer: HillshadeStyleLayer, tileIDs: Array<OverscaledTileID>) {
     if (painter.renderPass !== 'offscreen' && painter.renderPass !== 'translucent') return;
@@ -109,8 +110,8 @@ function prepareHillshade(painter, tile, sourceMaxZoom) {
     // base 10 - 0, 1, 6, 236 (this order is reversed in the resulting array via the overflow.
     // first 8 bits represent 236, so the r component of the texture pixel will be 236 etc.)
     // base 2 - 0000 0000, 0000 0001, 0000 0110, 1110 1100
-    if (tile.dem && tile.dem.level) {
-        const tileSize = tile.dem.level.dim;
+    if (tile.dem && tile.dem.data) {
+        const tileSize = tile.dem.dim;
 
         const pixelData = tile.dem.getPixels();
         context.activeTexture.set(gl.TEXTURE1);
@@ -122,10 +123,10 @@ function prepareHillshade(painter, tile, sourceMaxZoom) {
         tile.demTexture = tile.demTexture || painter.getTileTexture(tile.tileSize);
         if (tile.demTexture) {
             const demTexture = tile.demTexture;
-            demTexture.update(pixelData, false);
+            demTexture.update(pixelData, { premultiply: false });
             demTexture.bind(gl.NEAREST, gl.CLAMP_TO_EDGE);
         } else {
-            tile.demTexture = new Texture(context, pixelData, gl.RGBA, false);
+            tile.demTexture = new Texture(context, pixelData, gl.RGBA, { premultiply: false });
             tile.demTexture.bind(gl.NEAREST, gl.CLAMP_TO_EDGE);
         }
 

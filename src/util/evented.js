@@ -1,13 +1,16 @@
 // @flow
 
-const util = require('./util');
+import { extend } from './util';
 
 type Listener = (Object) => any;
 type Listeners = { [string]: Array<Listener> };
 
 function _addEventListener(type: string, listener: Listener, listenerList: Listeners) {
-    listenerList[type] = listenerList[type] || [];
-    listenerList[type].push(listener);
+    const listenerExists = listenerList[type] && listenerList[type].indexOf(listener) !== -1;
+    if (!listenerExists) {
+        listenerList[type] = listenerList[type] || [];
+        listenerList[type].push(listener);
+    }
 }
 
 function _removeEventListener(type: string, listener: Listener, listenerList: Listeners) {
@@ -19,18 +22,20 @@ function _removeEventListener(type: string, listener: Listener, listenerList: Li
     }
 }
 
-class Event {
+export class Event {
     +type: string;
 
     constructor(type: string, data: Object = {}) {
-        util.extend(this, data);
+        extend(this, data);
         this.type = type;
     }
 }
 
-class ErrorEvent extends Event {
+export class ErrorEvent extends Event {
+    error: Error;
+
     constructor(error: Error, data: Object = {}) {
-        super('error', util.extend({error}, data));
+        super('error', extend({error}, data));
     }
 }
 
@@ -39,7 +44,7 @@ class ErrorEvent extends Event {
  *
  * @mixin Evented
  */
-class Evented {
+export class Evented {
     _listeners: Listeners;
     _oneTimeListeners: Listeners;
     _eventedParent: ?Evented;
@@ -92,6 +97,13 @@ class Evented {
     }
 
     fire(event: Event) {
+        // Compatibility with (type: string, properties: Object) signature from previous versions.
+        // See https://github.com/mapbox/mapbox-gl-js/issues/6522,
+        //     https://github.com/mapbox/mapbox-gl-draw/issues/766
+        if (typeof event === 'string') {
+            event = new Event(event, arguments[1] || {});
+        }
+
         const type = event.type;
 
         if (this.listens(type)) {
@@ -111,14 +123,17 @@ class Evented {
 
             const parent = this._eventedParent;
             if (parent) {
-                util.extend(event, typeof this._eventedParentData === 'function' ? this._eventedParentData() : this._eventedParentData);
+                extend(
+                    event,
+                    typeof this._eventedParentData === 'function' ? this._eventedParentData() : this._eventedParentData
+                );
                 parent.fire(event);
             }
 
         // To ensure that no error events are dropped, print them to the
         // console if they have no listeners.
-        } else if (util.endsWith(type, 'error')) {
-            console.error((event && event.error) || event || 'Empty error event');
+        } else if (event instanceof ErrorEvent) {
+            console.error(event.error);
         }
 
         return this;
@@ -153,9 +168,3 @@ class Evented {
         return this;
     }
 }
-
-module.exports = {
-    Event,
-    ErrorEvent,
-    Evented
-};

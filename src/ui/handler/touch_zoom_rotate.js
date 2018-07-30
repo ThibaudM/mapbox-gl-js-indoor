@@ -1,17 +1,17 @@
 // @flow
 
-const DOM = require('../../util/dom');
-const util = require('../../util/util');
-const window = require('../../util/window');
-const browser = require('../../util/browser');
-const {Event} = require('../../util/evented');
+import DOM from '../../util/dom';
+import { bezier, bindAll } from '../../util/util';
+import window from '../../util/window';
+import browser from '../../util/browser';
+import { Event } from '../../util/evented';
 
 import type Map from '../map';
 import type Point from '@mapbox/point-geometry';
-import type Transform from '../../geo/transform';
+import type {TaskID} from '../../util/task_queue';
 
 const inertiaLinearity = 0.15,
-    inertiaEasing = util.bezier(0, 0, inertiaLinearity, 1),
+    inertiaEasing = bezier(0, 0, inertiaLinearity, 1),
     inertiaDeceleration = 12, // scale / s^2
     inertiaMaxSpeed = 2.5, // scale / s
     significantScaleThreshold = 0.15,
@@ -33,6 +33,7 @@ class TouchZoomRotateHandler {
     _gestureIntent: 'rotate' | 'zoom' | void;
     _inertia: Array<[number, number, Point]>;
     _lastTouchEvent: TouchEvent;
+    _frameId: ?TaskID;
 
     /**
      * @private
@@ -41,7 +42,7 @@ class TouchZoomRotateHandler {
         this._map = map;
         this._el = map.getCanvasContainer();
 
-        util.bindAll([
+        bindAll([
             '_onMove',
             '_onEnd',
             '_onTouchFrame'
@@ -68,11 +69,11 @@ class TouchZoomRotateHandler {
      * @example
      *   map.touchZoomRotate.enable({ around: 'center' });
      */
-    enable(options: any) {
+    enable(options: ?{around?: 'center'}) {
         if (this.isEnabled()) return;
         this._el.classList.add('mapboxgl-touch-zoom-rotate');
         this._enabled = true;
-        this._aroundCenter = options && options.around === 'center';
+        this._aroundCenter = !!options && options.around === 'center';
     }
 
     /**
@@ -162,14 +163,20 @@ class TouchZoomRotateHandler {
         }
 
         this._lastTouchEvent = e;
-        this._map._startAnimation(this._onTouchFrame);
+        if (!this._frameId) {
+            this._frameId = this._map._requestRenderFrame(this._onTouchFrame);
+        }
 
         e.preventDefault();
     }
 
-    _onTouchFrame(tr: Transform) {
+    _onTouchFrame() {
+        this._frameId = null;
+
         const gestureIntent = this._gestureIntent;
         if (!gestureIntent) return;
+
+        const tr = this._map.transform;
 
         if (!this._startScale) {
             this._startScale = tr.scale;
@@ -202,6 +209,10 @@ class TouchZoomRotateHandler {
         const gestureIntent = this._gestureIntent;
         const startScale = this._startScale;
 
+        if (this._frameId) {
+            this._map._cancelRenderFrame(this._frameId);
+            this._frameId = null;
+        }
         delete this._gestureIntent;
         delete this._startScale;
         delete this._startBearing;
@@ -270,4 +281,4 @@ class TouchZoomRotateHandler {
     }
 }
 
-module.exports = TouchZoomRotateHandler;
+export default TouchZoomRotateHandler;

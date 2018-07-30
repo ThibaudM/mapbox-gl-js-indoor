@@ -125,7 +125,7 @@ exports.run = function (implementation, ignores, render) {
             if (err) return done(err);
 
             let stats;
-            const dir = path.join(directory, params.group, params.test);
+            const dir = path.join(directory, params.id);
             try {
                 stats = fs.statSync(dir, fs.R_OK | fs.W_OK);
                 if (!stats.isDirectory()) throw new Error();
@@ -138,9 +138,19 @@ exports.run = function (implementation, ignores, render) {
             const diff     = path.join(dir, 'diff.png');
 
             const png = new PNG({
-                width: params.width * params.pixelRatio,
-                height: params.height * params.pixelRatio
+                width: Math.floor(params.width * params.pixelRatio),
+                height: Math.floor(params.height * params.pixelRatio)
             });
+
+            // PNG data must be unassociated (not premultiplied)
+            for (let i = 0; i < data.length; i++) {
+                const a = data[i * 4 + 3] / 255;
+                if (a !== 0) {
+                    data[i * 4 + 0] /= a;
+                    data[i * 4 + 1] /= a;
+                    data[i * 4 + 2] /= a;
+                }
+            }
 
             png.data = data;
 

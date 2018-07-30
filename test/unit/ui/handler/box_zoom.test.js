@@ -1,17 +1,16 @@
-'use strict';
+import { test } from 'mapbox-gl-js-test';
+import window from '../../../../src/util/window';
+import Map from '../../../../src/ui/map';
+import DOM from '../../../../src/util/dom';
+import simulate from 'mapbox-gl-js-test/simulate_interaction';
 
-const test = require('mapbox-gl-js-test').test;
-const window = require('../../../../src/util/window');
-const Map = require('../../../../src/ui/map');
-const DOM = require('../../../../src/util/dom');
-const simulate = require('mapbox-gl-js-test/simulate_interaction');
-
-function createMap() {
-    return new Map({ container: DOM.create('div', '', window.document.body) });
+function createMap(t, clickTolerance) {
+    t.stub(Map.prototype, '_detectMissingCSS');
+    return new Map({ container: DOM.create('div', '', window.document.body), clickTolerance });
 }
 
 test('BoxZoomHandler fires boxzoomstart and boxzoomend events at appropriate times', (t) => {
-    const map = createMap();
+    const map = createMap(t);
 
     const boxzoomstart = t.spy();
     const boxzoomend   = t.spy();
@@ -20,17 +19,17 @@ test('BoxZoomHandler fires boxzoomstart and boxzoomend events at appropriate tim
     map.on('boxzoomend',   boxzoomend);
 
     simulate.mousedown(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
-    map._updateCamera();
+    map._renderTaskQueue.run();
     t.equal(boxzoomstart.callCount, 0);
     t.equal(boxzoomend.callCount, 0);
 
     simulate.mousemove(map.getCanvas(), {shiftKey: true, clientX: 5, clientY: 5});
-    map._updateCamera();
+    map._renderTaskQueue.run();
     t.equal(boxzoomstart.callCount, 1);
     t.equal(boxzoomend.callCount, 0);
 
     simulate.mouseup(map.getCanvas(), {shiftKey: true, clientX: 5, clientY: 5});
-    map._updateCamera();
+    map._renderTaskQueue.run();
     t.equal(boxzoomstart.callCount, 1);
     t.equal(boxzoomend.callCount, 1);
 
@@ -39,7 +38,7 @@ test('BoxZoomHandler fires boxzoomstart and boxzoomend events at appropriate tim
 });
 
 test('BoxZoomHandler avoids conflicts with DragPanHandler when disabled and reenabled (#2237)', (t) => {
-    const map = createMap();
+    const map = createMap(t);
 
     map.boxZoom.disable();
     map.boxZoom.enable();
@@ -59,17 +58,17 @@ test('BoxZoomHandler avoids conflicts with DragPanHandler when disabled and reen
     map.on('dragend',   dragend);
 
     simulate.mousedown(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
-    map._updateCamera();
+    map._renderTaskQueue.run();
     t.equal(boxzoomstart.callCount, 0);
     t.equal(boxzoomend.callCount, 0);
 
     simulate.mousemove(map.getCanvas(), {shiftKey: true, clientX: 5, clientY: 5});
-    map._updateCamera();
+    map._renderTaskQueue.run();
     t.equal(boxzoomstart.callCount, 1);
     t.equal(boxzoomend.callCount, 0);
 
     simulate.mouseup(map.getCanvas(), {shiftKey: true, clientX: 5, clientY: 5});
-    map._updateCamera();
+    map._renderTaskQueue.run();
     t.equal(boxzoomstart.callCount, 1);
     t.equal(boxzoomend.callCount, 1);
 
@@ -82,7 +81,7 @@ test('BoxZoomHandler avoids conflicts with DragPanHandler when disabled and reen
 });
 
 test('BoxZoomHandler does not begin a box zoom if preventDefault is called on the mousedown event', (t) => {
-    const map = createMap();
+    const map = createMap(t);
 
     map.on('mousedown', e => e.preventDefault());
 
@@ -93,15 +92,71 @@ test('BoxZoomHandler does not begin a box zoom if preventDefault is called on th
     map.on('boxzoomend',   boxzoomend);
 
     simulate.mousedown(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
-    map._updateCamera();
+    map._renderTaskQueue.run();
 
     simulate.mousemove(map.getCanvas(), {shiftKey: true, clientX: 5, clientY: 5});
-    map._updateCamera();
+    map._renderTaskQueue.run();
 
     simulate.mouseup(map.getCanvas(), {shiftKey: true, clientX: 5, clientY: 5});
-    map._updateCamera();
+    map._renderTaskQueue.run();
 
     t.equal(boxzoomstart.callCount, 0);
+    t.equal(boxzoomend.callCount, 0);
+
+    map.remove();
+    t.end();
+});
+
+test('BoxZoomHandler does not begin a box zoom on spurious mousemove events', (t) => {
+    const map = createMap(t);
+
+    const boxzoomstart = t.spy();
+    const boxzoomend   = t.spy();
+
+    map.on('boxzoomstart', boxzoomstart);
+    map.on('boxzoomend',   boxzoomend);
+
+    simulate.mousedown(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
+    map._renderTaskQueue.run();
+    t.equal(boxzoomstart.callCount, 0);
+    t.equal(boxzoomend.callCount, 0);
+
+    simulate.mousemove(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
+    map._renderTaskQueue.run();
+    t.equal(boxzoomstart.callCount, 0);
+    t.equal(boxzoomend.callCount, 0);
+
+    simulate.mouseup(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
+    map._renderTaskQueue.run();
+    t.equal(boxzoomstart.callCount, 0);
+    t.equal(boxzoomend.callCount, 0);
+
+    map.remove();
+    t.end();
+});
+
+test('BoxZoomHandler does not begin a box zoom until mouse move is larger than click tolerance', (t) => {
+    const map = createMap(t, 4);
+
+    const boxzoomstart = t.spy();
+    const boxzoomend   = t.spy();
+
+    map.on('boxzoomstart', boxzoomstart);
+    map.on('boxzoomend',   boxzoomend);
+
+    simulate.mousedown(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 0});
+    map._renderTaskQueue.run();
+    t.equal(boxzoomstart.callCount, 0);
+    t.equal(boxzoomend.callCount, 0);
+
+    simulate.mousemove(map.getCanvas(), {shiftKey: true, clientX: 3, clientY: 0});
+    map._renderTaskQueue.run();
+    t.equal(boxzoomstart.callCount, 0);
+    t.equal(boxzoomend.callCount, 0);
+
+    simulate.mousemove(map.getCanvas(), {shiftKey: true, clientX: 0, clientY: 4});
+    map._renderTaskQueue.run();
+    t.equal(boxzoomstart.callCount, 1);
     t.equal(boxzoomend.callCount, 0);
 
     map.remove();
