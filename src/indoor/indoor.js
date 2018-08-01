@@ -1,14 +1,28 @@
 // @flow
 
-const {Event, ErrorEvent, Evented} = require('../util/evented');
-const ajax = require('../util/ajax');
+import { Event, ErrorEvent, Evented } from '../util/evented';
+import { getJSON } from '../util/ajax';
+
+import type Map from '../ui/map';
+import type StyleLayer from './style_layer';
 
 const MIN_TIME_BETWEEN_LOADING_LEVELS = 500; // in ms
 const SOURCE_ID = "indoorSource"
 
 class Indoor extends Evented {
 
-    constructor(map) {
+    _map: Map;
+    selectedLevel: ?number;
+    minLevel: number;
+    maxLevel: number;
+    listOfLayers: Array<StyleLayer>;
+    _sourceLoaded: boolean;
+    _styleLoaded: boolean;
+    _loaded: boolean;
+    _timestampLoadLevels: number;
+    _current_timeout: boolean;
+
+    constructor(map: Map) {
         super();
         this._map = map;
         this.selectedLevel = undefined;
@@ -53,7 +67,7 @@ class Indoor extends Evented {
 
         // Load images
         const requestImages = this._map._transformRequest(imagesUrl);
-        ajax.getJSON(requestImages, (error, json) => {
+        getJSON(requestImages, (error, json) => {
             if (error) {
                 this.fire(new ErrorEvent('error', {error}));
                 return;
@@ -80,7 +94,7 @@ class Indoor extends Evented {
 
         // Load Style
         const request = this._map._transformRequest(styleUrl);
-        ajax.getJSON(request, (error, json) => {
+        getJSON(request, (error, json) => {
             if (error) {
                 this.fire(new ErrorEvent('error', {error}));
                 return;
@@ -242,6 +256,5 @@ class Indoor extends Evented {
 
 };
 
-
-module.exports = Indoor;
+export default Indoor;
 

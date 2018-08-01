@@ -24,8 +24,7 @@ import { RGBAImage } from '../util/image';
 import { Event, ErrorEvent } from '../util/evented';
 import { MapMouseEvent } from './events';
 import TaskQueue from '../util/task_queue';
-
-const Indoor = require('../indoor/indoor');
+import Indoor from '../indoor/indoor';
 
 import type {LngLatLike} from '../geo/lng_lat';
 import type {LngLatBoundsLike} from '../geo/lng_lat_bounds';
