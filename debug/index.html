@@ -40,6 +40,10 @@ map.on('load', function() {
 
 });
 
+map._indoor.on('loaded', function() {
+    map.setIndoorLevel(1);
+});
+
 map.addControl(new mapboxgl.IndoorControl());
 map.addControl(new mapboxgl.GeolocateControl({
     positionOptions: {

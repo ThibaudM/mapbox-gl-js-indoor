@@ -129,10 +129,11 @@ class Indoor extends Evented {
             return;
         }
 
-        // this.loadLevels();
+        // We need to load levels at least once if user wants to call setLevel() after loaded event.
+        this.loadLevels();
 
-        this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
         this._loaded = true;
+        this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
     }
 
 
@@ -159,10 +160,11 @@ class Indoor extends Evented {
                 if(currentFilter == null) {
                     currentFilter = ["all"];
                 }
-                // A map cannot be used due to the "Map keyword"
-                // this.indoorLayers.set(layer.id, currentFilter); 
+                // A map cannot be used due to the "Map keyword" which is already used by Mapbox
+                // So we have to handle two lists
                 this.indoorLayers.push(layer.id); 
                 this.indoorFilters.push(currentFilter); 
+                // this.indoorLayers.set(layer.id, currentFilter); 
             }
         }
     }
