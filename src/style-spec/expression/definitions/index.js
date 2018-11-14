@@ -554,12 +554,12 @@ CompoundExpression.register(expressions, {
         [StringType, NumberType],
         (ctx, [r, s]) => {
 
+
             const range = r.evaluate(ctx);
             const value = s.evaluate(ctx);
 
             // First, check if it is an integer
-            r = parseInt(range);
-            if(!isNaN(r)) return r == value;
+            if(!isNaN(range)) return parseInt(range) == value;
 
             // Otherwise, use the regex
             const m = RegExp("(-?\\d+);(-?\\d+)", "g").exec(range);
@@ -569,6 +569,7 @@ CompoundExpression.register(expressions, {
             
             const min = parseInt(m[1]);
             const max = parseInt(m[2]);
+            const output = value >= min && value <= max;
             return value >= min && value <= max;
         }
     ]

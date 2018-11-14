@@ -3,6 +3,8 @@
 import DOM from '../../util/dom';
 import type Indoor from '../indoor/indoor';
 
+const className = 'mapboxgl-ctrl';
+
 /**
  * Creates a indoor control with floors buttons
 
@@ -24,7 +26,7 @@ class IndoorControl {
         this._indoor = map._indoor;
 
         // Create container
-        this._container = DOM.create('div', (`${this._className} ${this._className}-group`));
+        this._container = DOM.create('div', (`${className} ${className}-group`));
         this._container.addEventListener('contextmenu', this._onContextMenu.bind(this));
         this._el = map.getCanvasContainer();
 
@@ -91,7 +93,7 @@ class IndoorControl {
     }
 
     _createLevelButton(level) {
-        const a = DOM.create('button', `${this._className}-icon`, this._container);
+        const a = DOM.create('button', `${className}-icon`, this._container);
         a.innerHTML = level.toString();
         a.addEventListener('click', (e) => { 
             if(this._indoor._selectedLevel == level) return;

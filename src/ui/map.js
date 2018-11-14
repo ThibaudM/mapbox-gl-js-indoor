@@ -1755,18 +1755,15 @@ class Map extends Camera {
     }
 
 
-    createIndoorLayer(sourceUrl:string, sourceId:string, styleUrl:string, 
-        bounds:any, minzoom:number, maxzoom:number) {
+    createIndoorLayer(sourceUrl:string, styleUrl:string) {
 
         if(this.loaded()) {
-            this._indoor.createIndoorLayer(sourceUrl, sourceId, styleUrl,
-            bounds, minzoom, maxzoom);
+            this._indoor.createIndoorLayer(sourceUrl, styleUrl);
             return;
         } 
 
         this.on('load', function () {
-            this._indoor.createIndoorLayer(sourceUrl, sourceId, styleUrl,
-                bounds, minzoom, maxzoom);
+            this._indoor.createIndoorLayer(sourceUrl, styleUrl);
         });
     }
 
