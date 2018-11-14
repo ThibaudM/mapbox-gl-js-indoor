@@ -24,6 +24,7 @@ import { RGBAImage } from '../util/image';
 import { Event, ErrorEvent } from '../util/evented';
 import { MapMouseEvent } from './events';
 import TaskQueue from '../util/task_queue';
+import Indoor from '../indoor/indoor';
 
 import type {PointLike} from '@mapbox/point-geometry';
 import type {LngLatLike} from '../geo/lng_lat';
@@ -406,6 +407,8 @@ class Map extends Camera {
         this.on('dataloading', (event: MapDataEvent) => {
             this.fire(new Event(`${event.dataType}dataloading`, event));
         });
+        
+        this._indoor = new Indoor(this);
     }
 
     /*
@@ -1723,6 +1726,32 @@ class Map extends Camera {
             this.resize()._update();
         }
     }
+
+
+    createIndoorLayer(sourceUrl:string, styleUrl:string) {
+
+        if(this.loaded()) {
+            this._indoor.createIndoorLayer(sourceUrl, styleUrl);
+            return;
+        } 
+
+        this.on('load', function () {
+            this._indoor.createIndoorLayer(sourceUrl, styleUrl);
+        });
+    }
+
+    removeIndoorLayer(sourceId) {
+        this._indoor.removeIndoorLayer(sourceId);
+    }
+
+    setIndoorLevel(level) {
+        this._indoor.setLevel(level);
+    }
+
+    getSelectedIndoorLevel(level) {
+        return this._indoor.selectedLevel;
+    }
+
 
     /**
      * Gets and sets a Boolean indicating whether the map will render an outline
