@@ -32,13 +32,13 @@ class IndoorControl {
 
 
         // If indoor layer is already loaded, update levels 
-        if(this._indoor.loaded()) {
+        if (this._indoor.loaded()) {
             this.loadLevels();
 
-            if(this._indoor.selectedLevel != undefined) {
-                this._setSelected(map._indoor.selectedLevel)
+            if (this._indoor.selectedLevel !== undefined) {
+                this._setSelected(map._indoor.selectedLevel);
             }
-        } 
+        }
 
         // Register to indoor events
         this._indoor.on('building.added', (data) => { this.loadNavigationBar(data); });
@@ -52,7 +52,7 @@ class IndoorControl {
 
 
     onRemove() {
-        
+
     }
 
     loadNavigationBar(data) {
@@ -63,16 +63,16 @@ class IndoorControl {
             this._container.removeChild(this._container.firstChild);
         }
 
-        for (let i = data.minLevel; i <= data.maxLevel; i++) { 
+        for (let i = data.minLevel; i <= data.maxLevel; i++) {
             this._levelsButtons[i] = this._createLevelButton(i);
         }
 
         // if(this._selectedButton == null) {
-            if(this._indoor.selectedLevel != undefined) {
-                this._setSelected(this._indoor.selectedLevel);
-            } else {
-                this._setSelected(0);
-            }
+        if (this._indoor.selectedLevel !== undefined) {
+            this._setSelected(this._indoor.selectedLevel);
+        } else {
+            this._setSelected(0);
+        }
         // }
     }
 
@@ -84,7 +84,7 @@ class IndoorControl {
 
     _setSelected(level) {
 
-        if(this._selectedButton != null) {
+        if (this._selectedButton != null) {
             this._selectedButton.style.fontWeight = "normal";
         }
         this._levelsButtons[level].style.fontWeight = "bold";
@@ -95,8 +95,8 @@ class IndoorControl {
     _createLevelButton(level) {
         const a = DOM.create('button', `${className}-icon`, this._container);
         a.innerHTML = level.toString();
-        a.addEventListener('click', (e) => { 
-            if(this._indoor._selectedLevel == level) return;
+        a.addEventListener('click', () => {
+            if (this._indoor._selectedLevel === level) return;
             this._indoor.setLevel(level);
         });
         return a;
