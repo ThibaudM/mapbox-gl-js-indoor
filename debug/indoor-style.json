@@ -170,8 +170,42 @@
         "source": "indoor",
         "paint": {
             "fill-color": "#A1887F",
-            "fill-outline-color": "#000000",
             "fill-opacity": {
+                "base": 1,
+                "stops": [
+                    [
+                        17,
+                        0
+                    ],
+                    [
+                        18,
+                        1
+                    ]
+                ]
+            }
+        }
+    },
+    {
+        "filter": [
+            "any",
+            [
+                "filter-==",
+                "indoor",
+                "room"
+            ],
+            [
+                "filter-==",
+                "indoor",
+                "area"
+            ]
+        ],
+        "id": "indoor-rooms-borders",
+        "type": "line",
+        "source": "indoor",
+        "paint": {
+            "line-color": "#000",
+            "line-width": 1,
+            "line-opacity": {
                 "base": 1,
                 "stops": [
                     [
