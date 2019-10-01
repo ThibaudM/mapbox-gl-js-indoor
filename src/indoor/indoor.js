@@ -2,6 +2,7 @@
 
 import { Event, ErrorEvent, Evented } from '../util/evented';
 import { getJSON } from '../util/ajax';
+import GeoJsonHelper from './geojson_helper';
 
 // import type Map from '../ui/map';
 import type StyleLayer from './style_layer';
@@ -94,13 +95,24 @@ class Indoor extends Evented {
         const request = this._map._transformRequest(styleUrl);
         getJSON(request, (error, json) => {
             if (error) {
-                this.fire(new ErrorEvent('error', {error}));
+                this.fire(new ErrorEvent('error', { error }));
                 return;
             }
-            for (var i = 0; i < json.length; i++){
-                this._map.addLayer(json[i]);
+            for (var i = 0; i < json.length; i++) {
+                const layer = json[i];
+                if (layer.id === "poi-indoor") {
+                    this.createPoiLayers(layer);
+                } else {
+                    this._map.addLayer(layer);
+                }
             }
     
+            const layersToRemove = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scalerank3', 'road-label-small'];
+            layersToRemove.forEach(layerId => {
+                this._map.setLayoutProperty(layerId, 'visibility', 'none');
+            });
+
+
             this.initializeFilters();
 
             this._styleLoaded = true;
@@ -109,6 +121,18 @@ class Indoor extends Evented {
 
     }
 
+
+    createPoiLayers(metaLayer) {
+
+        GeoJsonHelper.generateOsmFilterTagsToMaki().forEach(poi => {
+            const newLayer = JSON.parse(JSON.stringify(metaLayer));
+            newLayer.id += `-${poi.maki}`;
+            newLayer.filter = poi.filter;
+            newLayer.layout['icon-image'] = (`${poi.maki}-15`);
+            this._map.addLayer(newLayer);
+        });
+
+    }
 
     tryToLoadLevels() {
         if(new Date().getTime() - this._timestampLoadLevels > MIN_TIME_BETWEEN_LOADING_LEVELS) {
@@ -155,7 +179,7 @@ class Indoor extends Evented {
         for(const key in this._map.style._layers) {
             const layer = this._map.style._layers[key];
 
-            if(SOURCE_ID == layer.source && layer.id != "buildings") {
+            if(SOURCE_ID == layer.source && layer.id != "buildings" && layer.id != "buildings-background") {
                 let currentFilter = this._map.getFilter(layer.id);
                 if(currentFilter == null) {
                     currentFilter = ["all"];
@@ -178,7 +202,7 @@ class Indoor extends Evented {
         let minLevel = 0;
         
 
-        const features = this._map.querySourceFeatures(SOURCE_ID, { filter: ["has", "level"]});
+        const features = this._map.querySourceFeatures(SOURCE_ID, { filter: ["has", "level"] });
 
 
         for (let i = 0; i < features.length; i++) { 
