@@ -1,11 +1,11 @@
 // @flow
 
-import { getArrayBuffer } from '../util/ajax';
+import {getArrayBuffer} from '../util/ajax';
 
 import vt from '@mapbox/vector-tile';
 import Protobuf from 'pbf';
 import WorkerTile from './worker_tile';
-import { extend } from '../util/util';
+import {extend} from '../util/util';
 import performance from '../util/performance';
 
 import type {
@@ -15,7 +15,6 @@ import type {
     TileParameters
 } from '../source/worker_source';
 
-import type {PerformanceResourceTiming} from '../types/performance_resource_timing';
 import type Actor from '../util/actor';
 import type StyleLayerIndex from '../style/style_layer_index';
 import type {Callback} from '../types/callback';
@@ -50,8 +49,8 @@ function loadVectorTile(params: WorkerTileParameters, callback: LoadVectorDataCa
             callback(null, {
                 vectorTile: new vt.VectorTile(new Protobuf(data)),
                 rawData: data,
-                cacheControl: cacheControl,
-                expires: expires
+                cacheControl,
+                expires
             });
         }
     });
@@ -73,6 +72,7 @@ function loadVectorTile(params: WorkerTileParameters, callback: LoadVectorDataCa
 class VectorTileWorkerSource implements WorkerSource {
     actor: Actor;
     layerIndex: StyleLayerIndex;
+    availableImages: Array<string>;
     loadVectorData: LoadVectorData;
     loading: { [string]: WorkerTile };
     loaded: { [string]: WorkerTile };
@@ -83,9 +83,10 @@ class VectorTileWorkerSource implements WorkerSource {
      * {@link VectorTileWorkerSource#loadTile}. The default implementation simply
      * loads the pbf at `params.url`.
      */
-    constructor(actor: Actor, layerIndex: StyleLayerIndex, loadVectorData: ?LoadVectorData) {
+    constructor(actor: Actor, layerIndex: StyleLayerIndex, availableImages: Array<string>, loadVectorData: ?LoadVectorData) {
         this.actor = actor;
         this.layerIndex = layerIndex;
+        this.availableImages = availableImages;
         this.loadVectorData = loadVectorData || loadVectorTile;
         this.loading = {};
         this.loaded = {};
@@ -130,7 +131,7 @@ class VectorTileWorkerSource implements WorkerSource {
             }
 
             workerTile.vectorTile = response.vectorTile;
-            workerTile.parse(response.vectorTile, this.layerIndex, this.actor, (err, result) => {
+            workerTile.parse(response.vectorTile, this.layerIndex, this.availableImages, this.actor, (err, result) => {
                 if (err || !result) return callback(err);
 
                 // Transferring a copy of rawTileData because the worker needs to retain its copy.
@@ -157,7 +158,7 @@ class VectorTileWorkerSource implements WorkerSource {
                 const reloadCallback = workerTile.reloadCallback;
                 if (reloadCallback) {
                     delete workerTile.reloadCallback;
-                    workerTile.parse(workerTile.vectorTile, vtSource.layerIndex, vtSource.actor, reloadCallback);
+                    workerTile.parse(workerTile.vectorTile, vtSource.layerIndex, this.availableImages, vtSource.actor, reloadCallback);
                 }
                 callback(err, data);
             };
@@ -167,7 +168,7 @@ class VectorTileWorkerSource implements WorkerSource {
             } else if (workerTile.status === 'done') {
                 // if there was no vector tile data on the initial load, don't try and re-parse tile
                 if (workerTile.vectorTile) {
-                    workerTile.parse(workerTile.vectorTile, this.layerIndex, this.actor, done);
+                    workerTile.parse(workerTile.vectorTile, this.layerIndex, this.availableImages, this.actor, done);
                 } else {
                     done();
                 }

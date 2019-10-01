@@ -1,6 +1,6 @@
-import { test } from 'mapbox-gl-js-test';
+import {test} from '../../util/test';
 import CrossTileSymbolIndex from '../../../src/symbol/cross_tile_symbol_index';
-import { OverscaledTileID } from '../../../src/source/tile_id';
+import {OverscaledTileID} from '../../../src/source/tile_id';
 
 const styleLayer = {
     id: 'test'
@@ -10,20 +10,20 @@ function makeSymbolInstance(x, y, key) {
     return {
         anchorX: x,
         anchorY: y,
-        key: key
+        key
     };
 }
 
 function makeTile(tileID, symbolInstances) {
     const bucket = {
         symbolInstances: {
-            get: function(i) { return symbolInstances[i]; },
+            get(i) { return symbolInstances[i]; },
             length: symbolInstances.length
         },
         layerIds: ['test']
     };
     return {
-        tileID: tileID,
+        tileID,
         getBucket: () => bucket,
         latestFeatureIndex: {}
     };

@@ -4,11 +4,11 @@ import assert from 'assert';
 
 import Grid from 'grid-index';
 import Color from '../style-spec/util/color';
-import { StylePropertyFunction, StyleExpression, ZoomDependentExpression, ZoomConstantExpression } from '../style-spec/expression';
+import {StylePropertyFunction, StyleExpression, ZoomDependentExpression, ZoomConstantExpression} from '../style-spec/expression';
 import CompoundExpression from '../style-spec/expression/compound_expression';
 import expressions from '../style-spec/expression/definitions';
 import window from './window';
-const { ImageData } = window;
+const {ImageData} = window;
 
 import type {Transferable} from '../types/transferable';
 
@@ -71,7 +71,7 @@ register('Object', Object);
 
 type SerializedGrid = { buffer: ArrayBuffer };
 
-Grid.serialize = function serializeGrid(grid: Grid, transferables?: Array<Transferable>): SerializedGrid {
+Grid.serialize = function serialize(grid: Grid, transferables?: Array<Transferable>): SerializedGrid {
     const buffer = grid.toArrayBuffer();
     if (transferables) {
         transferables.push(buffer);
@@ -79,7 +79,7 @@ Grid.serialize = function serializeGrid(grid: Grid, transferables?: Array<Transf
     return {buffer};
 };
 
-Grid.deserialize = function deserializeGrid(serialized: SerializedGrid): Grid {
+Grid.deserialize = function deserialize(serialized: SerializedGrid): Grid {
     return new Grid(serialized.buffer);
 };
 register('Grid', Grid);
@@ -149,7 +149,7 @@ export function serialize(input: mixed, transferables?: Array<Transferable>): Se
     }
 
     if (Array.isArray(input)) {
-        const serialized = [];
+        const serialized: Array<Serialized> = [];
         for (const item of input) {
             serialized.push(serialize(item, transferables));
         }

@@ -1,14 +1,14 @@
 // @flow
 
-import assert from 'assert';
-import { mat4 } from 'gl-matrix';
+import {mat4} from 'gl-matrix';
 
 import {
     Uniform1i,
     Uniform1f,
     Uniform2f,
     UniformColor,
-    UniformMatrix4f
+    UniformMatrix4f,
+    Uniform4f
 } from '../uniform_binding';
 import EXTENT from '../../data/extent';
 import MercatorCoordinate from '../../geo/mercator_coordinate';
@@ -36,7 +36,8 @@ export type HillshadePrepareUniformsType = {|
     'u_image': Uniform1i,
     'u_dimension': Uniform2f,
     'u_zoom': Uniform1f,
-    'u_maxzoom': Uniform1f
+    'u_maxzoom': Uniform1f,
+    'u_unpack': Uniform4f
 |};
 
 const hillshadeUniforms = (context: Context, locations: UniformLocations): HillshadeUniformsType => ({
@@ -54,7 +55,8 @@ const hillshadePrepareUniforms = (context: Context, locations: UniformLocations)
     'u_image': new Uniform1i(context, locations.u_image),
     'u_dimension': new Uniform2f(context, locations.u_dimension),
     'u_zoom': new Uniform1f(context, locations.u_zoom),
-    'u_maxzoom': new Uniform1f(context, locations.u_maxzoom)
+    'u_maxzoom': new Uniform1f(context, locations.u_maxzoom),
+    'u_unpack': new Uniform4f(context, locations.u_unpack)
 });
 
 const hillshadeUniformValues = (
@@ -71,9 +73,9 @@ const hillshadeUniformValues = (
     if (layer.paint.get('hillshade-illumination-anchor') === 'viewport') {
         azimuthal -= painter.transform.angle;
     }
-
+    const align = !painter.options.moving;
     return {
-        'u_matrix': painter.transform.calculatePosMatrix(tile.tileID.toUnwrapped(), true),
+        'u_matrix': painter.transform.calculatePosMatrix(tile.tileID.toUnwrapped(), align),
         'u_image': 0,
         'u_latrange': getTileLatRange(painter, tile.tileID),
         'u_light': [layer.paint.get('hillshade-exaggeration'), azimuthal],
@@ -84,10 +86,10 @@ const hillshadeUniformValues = (
 };
 
 const hillshadeUniformPrepareValues = (
-    tile: {dem: ?DEMData, tileID: OverscaledTileID}, maxzoom: number
+    tileID: OverscaledTileID, dem: DEMData, maxzoom: number
 ): UniformValues<HillshadePrepareUniformsType> => {
-    assert(tile.dem);
-    const tileSize = ((tile.dem: any): DEMData).dim;
+
+    const stride = dem.stride;
     const matrix = mat4.create();
     // Flip rendering at y axis.
     mat4.ortho(matrix, 0, EXTENT, -EXTENT, 0, 0, 1);
@@ -96,9 +98,10 @@ const hillshadeUniformPrepareValues = (
     return {
         'u_matrix': matrix,
         'u_image': 1,
-        'u_dimension': [tileSize * 2, tileSize * 2],
-        'u_zoom': tile.tileID.overscaledZ,
-        'u_maxzoom': maxzoom
+        'u_dimension': [stride, stride],
+        'u_zoom': tileID.overscaledZ,
+        'u_maxzoom': maxzoom,
+        'u_unpack': dem.getUnpackVector()
     };
 };
 

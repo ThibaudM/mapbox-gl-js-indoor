@@ -1,7 +1,7 @@
 // @flow
 
 import window from '../util/window';
-const { HTMLImageElement, HTMLCanvasElement, HTMLVideoElement, ImageData } = window;
+const {HTMLImageElement, HTMLCanvasElement, HTMLVideoElement, ImageData} = window;
 
 import type Context from '../gl/context';
 import type {RGBAImage, AlphaImage} from '../util/image';
@@ -49,9 +49,9 @@ class Texture {
         this.update(image, options);
     }
 
-    update(image: TextureImage, options: ?{premultiply?: boolean, useMipmap?: boolean}) {
+    update(image: TextureImage, options: ?{premultiply?: boolean, useMipmap?: boolean}, position?: { x: number, y: number }) {
         const {width, height} = image;
-        const resize = !this.size || this.size[0] !== width || this.size[1] !== height;
+        const resize = (!this.size || this.size[0] !== width || this.size[1] !== height) && !position;
         const {context} = this;
         const {gl} = context;
 
@@ -72,10 +72,11 @@ class Texture {
             }
 
         } else {
+            const {x, y} = position || {x: 0, y: 0};
             if (image instanceof HTMLImageElement || image instanceof HTMLCanvasElement || image instanceof HTMLVideoElement || image instanceof ImageData) {
-                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, image);
             } else {
-                gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, image.data);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, image.data);
             }
         }
 

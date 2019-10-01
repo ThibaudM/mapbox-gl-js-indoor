@@ -6,7 +6,8 @@
       "y": -17,
       "vertical": false,
       "scale": 1,
-      "fontStack": "Test"
+      "fontStack": "Test",
+      "sectionIndex": 0
     },
     {
       "glyph": 105,
@@ -14,7 +15,8 @@
       "y": -17,
       "vertical": false,
       "scale": 1,
-      "fontStack": "Test"
+      "fontStack": "Test",
+      "sectionIndex": 0
     }
   ],
   "text": "hi\u0000",
@@ -22,5 +24,7 @@
   "bottom": 12,
   "left": -10,
   "right": 10,
-  "writingMode": 1
+  "writingMode": 1,
+  "yOffset": -17,
+  "lineCount": 1
 }

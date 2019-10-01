@@ -34,8 +34,6 @@ import fillExtrusionFrag from './fill_extrusion.fragment.glsl';
 import fillExtrusionVert from './fill_extrusion.vertex.glsl';
 import fillExtrusionPatternFrag from './fill_extrusion_pattern.fragment.glsl';
 import fillExtrusionPatternVert from './fill_extrusion_pattern.vertex.glsl';
-import extrusionTextureFrag from './extrusion_texture.fragment.glsl';
-import extrusionTextureVert from './extrusion_texture.vertex.glsl';
 import hillshadePrepareFrag from './hillshade_prepare.fragment.glsl';
 import hillshadePrepareVert from './hillshade_prepare.vertex.glsl';
 import hillshadeFrag from './hillshade.fragment.glsl';
@@ -71,7 +69,6 @@ export const fillOutlinePattern = compile(fillOutlinePatternFrag, fillOutlinePat
 export const fillPattern = compile(fillPatternFrag, fillPatternVert);
 export const fillExtrusion = compile(fillExtrusionFrag, fillExtrusionVert);
 export const fillExtrusionPattern = compile(fillExtrusionPatternFrag, fillExtrusionPatternVert);
-export const extrusionTexture = compile(extrusionTextureFrag, extrusionTextureVert);
 export const hillshadePrepare = compile(hillshadePrepareFrag, hillshadePrepareVert);
 export const hillshade = compile(hillshadeFrag, hillshadeVert);
 export const line = compile(lineFrag, lineVert);
@@ -116,7 +113,7 @@ uniform ${precision} ${type} u_${name};
             if (operation === 'define') {
                 return `
 #ifndef HAS_UNIFORM_u_${name}
-uniform lowp float a_${name}_t;
+uniform lowp float u_${name}_t;
 attribute ${precision} ${attrType} a_${name};
 varying ${precision} ${type} ${name};
 #else
@@ -136,7 +133,7 @@ uniform ${precision} ${type} u_${name};
                 } else {
                     return `
 #ifndef HAS_UNIFORM_u_${name}
-    ${name} = unpack_mix_${unpackType}(a_${name}, a_${name}_t);
+    ${name} = unpack_mix_${unpackType}(a_${name}, u_${name}_t);
 #else
     ${precision} ${type} ${name} = u_${name};
 #endif
@@ -147,7 +144,7 @@ uniform ${precision} ${type} u_${name};
             if (operation === 'define') {
                 return `
 #ifndef HAS_UNIFORM_u_${name}
-uniform lowp float a_${name}_t;
+uniform lowp float u_${name}_t;
 attribute ${precision} ${attrType} a_${name};
 #else
 uniform ${precision} ${type} u_${name};
@@ -166,7 +163,7 @@ uniform ${precision} ${type} u_${name};
                 } else /* */{
                     return `
 #ifndef HAS_UNIFORM_u_${name}
-    ${precision} ${type} ${name} = unpack_mix_${unpackType}(a_${name}, a_${name}_t);
+    ${precision} ${type} ${name} = unpack_mix_${unpackType}(a_${name}, u_${name}_t);
 #else
     ${precision} ${type} ${name} = u_${name};
 #endif

@@ -2,19 +2,19 @@
 
 import browser from '../util/browser';
 
-import { mat4 } from 'gl-matrix';
+import {mat4} from 'gl-matrix';
 import SourceCache from '../source/source_cache';
 import EXTENT from '../data/extent';
 import pixelsToTileUnits from '../source/pixels_to_tile_units';
 import SegmentVector from '../data/segment';
-import { RasterBoundsArray, PosArray, TriangleIndexArray, LineStripIndexArray } from '../data/array_types';
+import {RasterBoundsArray, PosArray, TriangleIndexArray, LineStripIndexArray} from '../data/array_types';
 import rasterBoundsAttributes from '../data/raster_bounds_attributes';
 import posAttributes from '../data/pos_attributes';
 import ProgramConfiguration from '../data/program_configuration';
 import CrossTileSymbolIndex from '../symbol/cross_tile_symbol_index';
 import * as shaders from '../shaders';
 import Program from './program';
-import { programUniforms } from './program/program_uniforms';
+import {programUniforms} from './program/program_uniforms';
 import Context from '../gl/context';
 import DepthMode from '../gl/depth_mode';
 import StencilMode from '../gl/stencil_mode';
@@ -22,7 +22,7 @@ import ColorMode from '../gl/color_mode';
 import CullFaceMode from '../gl/cull_face_mode';
 import Texture from './texture';
 import updateTileMasks from './tile_mask';
-import { clippingMaskUniformValues } from './program/clipping_mask_program';
+import {clippingMaskUniformValues} from './program/clipping_mask_program';
 import Color from '../style-spec/util/color';
 import symbol from './draw_symbol';
 import circle from './draw_circle';
@@ -61,7 +61,8 @@ import type ImageManager from './image_manager';
 import type GlyphManager from './glyph_manager';
 import type VertexBuffer from '../gl/vertex_buffer';
 import type IndexBuffer from '../gl/index_buffer';
-import type {DepthMaskType, DepthFuncType} from '../gl/types';
+import type {DepthRangeType, DepthMaskType, DepthFuncType} from '../gl/types';
+import type ResolvedImage from '../style-spec/expression/types/resolved_image';
 
 export type RenderPass = 'offscreen' | 'opaque' | 'translucent';
 
@@ -70,6 +71,7 @@ type PainterOptions = {
     showTileBoundaries: boolean,
     rotating: boolean,
     zooming: boolean,
+    moving: boolean,
     fadeDuration: number
 }
 
@@ -107,9 +109,12 @@ class Painter {
     lineAtlas: LineAtlas;
     imageManager: ImageManager;
     glyphManager: GlyphManager;
-    depthRange: number;
+    depthRangeFor3D: DepthRangeType;
+    opaquePassCutoff: number;
     renderPass: RenderPass;
     currentLayer: number;
+    currentStencilSource: ?string;
+    nextStencilID: number;
     id: string;
     _showOverdrawInspector: boolean;
     cache: { [string]: Program<*> };
@@ -207,7 +212,7 @@ class Painter {
         this.quadTriangleIndexBuffer = context.createIndexBuffer(quadTriangleIndices);
 
         const gl = this.context.gl;
-        this.stencilClearMode = new StencilMode({ func: gl.ALWAYS, mask: 0 }, 0x0, 0xFF, gl.ZERO, gl.ZERO, gl.ZERO);
+        this.stencilClearMode = new StencilMode({func: gl.ALWAYS, mask: 0}, 0x0, 0xFF, gl.ZERO, gl.ZERO, gl.ZERO);
     }
 
     /*
@@ -217,6 +222,9 @@ class Painter {
     clearStencil() {
         const context = this.context;
         const gl = context.gl;
+
+        this.nextStencilID = 1;
+        this.currentStencilSource = undefined;
 
         // As a temporary workaround for https://github.com/mapbox/mapbox-gl-js/issues/5490,
         // pending an upstream fix, we draw a fullscreen stencil=0 clipping mask here,
@@ -234,33 +242,53 @@ class Painter {
             this.quadTriangleIndexBuffer, this.viewportSegments);
     }
 
-    _renderTileClippingMasks(tileIDs: Array<OverscaledTileID>) {
+    _renderTileClippingMasks(layer: StyleLayer, tileIDs: Array<OverscaledTileID>) {
+        if (this.currentStencilSource === layer.source || !layer.isTileClipped() || !tileIDs || !tileIDs.length) return;
+
+        this.currentStencilSource = layer.source;
+
         const context = this.context;
         const gl = context.gl;
+
+        if (this.nextStencilID + tileIDs.length > 256) {
+            // we'll run out of fresh IDs so we need to clear and start from scratch
+            this.clearStencil();
+        }
 
         context.setColorMode(ColorMode.disabled);
         context.setDepthMode(DepthMode.disabled);
 
         const program = this.useProgram('clippingMask');
 
-        let idNext = 1;
         this._tileClippingMaskIDs = {};
 
         for (const tileID of tileIDs) {
-            const id = this._tileClippingMaskIDs[tileID.key] = idNext++;
+            const id = this._tileClippingMaskIDs[tileID.key] = this.nextStencilID++;
 
             program.draw(context, gl.TRIANGLES, DepthMode.disabled,
                 // Tests will always pass, and ref value will be written to stencil buffer.
-                new StencilMode({ func: gl.ALWAYS, mask: 0 }, id, 0xFF, gl.KEEP, gl.KEEP, gl.REPLACE),
+                new StencilMode({func: gl.ALWAYS, mask: 0}, id, 0xFF, gl.KEEP, gl.KEEP, gl.REPLACE),
                 ColorMode.disabled, CullFaceMode.disabled, clippingMaskUniformValues(tileID.posMatrix),
                 '$clipping', this.tileExtentBuffer,
                 this.quadTriangleIndexBuffer, this.tileExtentSegments);
         }
     }
 
+    stencilModeFor3D(): StencilMode {
+        this.currentStencilSource = undefined;
+
+        if (this.nextStencilID + 1 > 256) {
+            this.clearStencil();
+        }
+
+        const id = this.nextStencilID++;
+        const gl = this.context.gl;
+        return new StencilMode({func: gl.NOTEQUAL, mask: 0xFF}, id, 0xFF, gl.KEEP, gl.KEEP, gl.REPLACE);
+    }
+
     stencilModeForClipping(tileID: OverscaledTileID): StencilMode {
         const gl = this.context.gl;
-        return new StencilMode({ func: gl.EQUAL, mask: 0xFF }, this._tileClippingMaskIDs[tileID.key], 0x00, gl.KEEP, gl.KEEP, gl.REPLACE);
+        return new StencilMode({func: gl.EQUAL, mask: 0xFF}, this._tileClippingMaskIDs[tileID.key], 0x00, gl.KEEP, gl.KEEP, gl.REPLACE);
     }
 
     colorModeForRenderPass(): $ReadOnly<ColorMode> {
@@ -277,10 +305,21 @@ class Painter {
         }
     }
 
-    depthModeForSublayer(n: number, mask: DepthMaskType, func: ?DepthFuncType): DepthMode {
-        const farDepth = 1 - ((1 + this.currentLayer) * this.numSublayers + n) * this.depthEpsilon;
-        const nearDepth = farDepth - 1 + this.depthRange;
-        return new DepthMode(func || this.context.gl.LEQUAL, mask, [nearDepth, farDepth]);
+    depthModeForSublayer(n: number, mask: DepthMaskType, func: ?DepthFuncType): $ReadOnly<DepthMode> {
+        if (!this.opaquePassEnabledForLayer()) return DepthMode.disabled;
+        const depth = 1 - ((1 + this.currentLayer) * this.numSublayers + n) * this.depthEpsilon;
+        return new DepthMode(func || this.context.gl.LEQUAL, mask, [depth, depth]);
+    }
+
+    /*
+     * The opaque pass and 3D layers both use the depth buffer.
+     * Layers drawn above 3D layers need to be drawn using the
+     * painter's algorithm so that they appear above 3D features.
+     * This returns true for layers that can be drawn using the
+     * opaque pass.
+     */
+    opaquePassEnabledForLayer() {
+        return this.currentLayer < this.opaquePassCutoff;
     }
 
     render(style: Style, options: PainterOptions) {
@@ -292,6 +331,8 @@ class Painter {
         this.glyphManager = style.glyphManager;
 
         this.symbolFadeChange = style.placement.symbolFadeChange(browser.now());
+
+        this.imageManager.beginFrame();
 
         const layerIds = this.style._order;
         const sourceCaches = this.style.sourceCaches;
@@ -323,6 +364,15 @@ class Painter {
             updateTileMasks(visibleTiles, this.context);
         }
 
+        this.opaquePassCutoff = Infinity;
+        for (let i = 0; i < layerIds.length; i++) {
+            const layerId = layerIds[i];
+            if (this.style._layers[layerId].is3D()) {
+                this.opaquePassCutoff = i;
+                break;
+            }
+        }
+
         // Offscreen pass ===============================================
         // We first do all rendering that requires rendering to a separate
         // framebuffer, and then save those for rendering back to the map
@@ -344,37 +394,30 @@ class Painter {
         this.context.bindFramebuffer.set(null);
 
         // Clear buffers in preparation for drawing to the main framebuffer
-        this.context.clear({ color: options.showOverdrawInspector ? Color.black : Color.transparent, depth: 1 });
+        this.context.clear({color: options.showOverdrawInspector ? Color.black : Color.transparent, depth: 1});
+        this.clearStencil();
 
         this._showOverdrawInspector = options.showOverdrawInspector;
-        this.depthRange = (style._order.length + 2) * this.numSublayers * this.depthEpsilon;
+        this.depthRangeFor3D = [0, 1 - ((style._order.length + 2) * this.numSublayers * this.depthEpsilon)];
 
         // Opaque pass ===============================================
         // Draw opaque layers top-to-bottom first.
         this.renderPass = 'opaque';
-        let prevSourceId;
 
         for (this.currentLayer = layerIds.length - 1; this.currentLayer >= 0; this.currentLayer--) {
             const layer = this.style._layers[layerIds[this.currentLayer]];
             const sourceCache = sourceCaches[layer.source];
             const coords = coordsAscending[layer.source];
 
-            if (layer.source !== prevSourceId && sourceCache) {
-                this.clearStencil();
-                if (sourceCache.getSource().isTileClipped) {
-                    this._renderTileClippingMasks(coords);
-                }
-            }
-
+            this._renderTileClippingMasks(layer, coords);
             this.renderLayer(this, sourceCache, layer, coords);
-            prevSourceId = layer.source;
         }
 
         // Translucent pass ===============================================
         // Draw all other layers bottom-to-top.
         this.renderPass = 'translucent';
 
-        for (this.currentLayer = 0, prevSourceId = null; this.currentLayer < layerIds.length; this.currentLayer++) {
+        for (this.currentLayer = 0; this.currentLayer < layerIds.length; this.currentLayer++) {
             const layer = this.style._layers[layerIds[this.currentLayer]];
             const sourceCache = sourceCaches[layer.source];
 
@@ -383,15 +426,8 @@ class Painter {
             // separate clipping masks
             const coords = (layer.type === 'symbol' ? coordsDescendingSymbol : coordsDescending)[layer.source];
 
-            if (layer.source !== prevSourceId && sourceCache) {
-                this.clearStencil();
-                if (sourceCache.getSource().isTileClipped) {
-                    this._renderTileClippingMasks(coordsAscending[layer.source]);
-                }
-            }
-
+            this._renderTileClippingMasks(layer, coordsAscending[layer.source]);
             this.renderLayer(this, sourceCache, layer, coords);
-            prevSourceId = layer.source;
         }
 
         if (this.options.showTileBoundaries) {
@@ -401,7 +437,9 @@ class Painter {
             }
         }
 
-        this.setCustomLayerDefaults();
+        // Set defaults for most GL values so that anyone using the state after the render
+        // encounters more expected values.
+        this.context.setDefault();
     }
 
     setupOffscreenDepthRenderbuffer(): void {
@@ -417,7 +455,7 @@ class Painter {
         if (layer.type !== 'background' && layer.type !== 'custom' && !coords.length) return;
         this.id = layer.id;
 
-        draw[layer.type](painter, sourceCache, layer, coords);
+        draw[layer.type](painter, sourceCache, layer, coords, this.style.placement.variableOffsets);
     }
 
     /**
@@ -471,10 +509,10 @@ class Painter {
      *
      * @returns true if a needed image is missing and rendering needs to be skipped.
      */
-    isPatternMissing(image: ?CrossFaded<string>): boolean {
+    isPatternMissing(image: ?CrossFaded<ResolvedImage>): boolean {
         if (!image) return false;
-        const imagePosA = this.imageManager.getPattern(image.from);
-        const imagePosB = this.imageManager.getPattern(image.to);
+        const imagePosA = this.imageManager.getPattern(image.from.toString());
+        const imagePosB = this.imageManager.getPattern(image.to.toString());
         return !imagePosA || !imagePosB;
     }
 

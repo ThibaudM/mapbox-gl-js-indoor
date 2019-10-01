@@ -1,13 +1,13 @@
 // @flow
 
-import { clamp } from '../util/util';
+import {clamp} from '../util/util';
 
 import ImageSource from '../source/image_source';
 import browser from '../util/browser';
 import StencilMode from '../gl/stencil_mode';
 import DepthMode from '../gl/depth_mode';
 import CullFaceMode from '../gl/cull_face_mode';
-import { rasterUniformValues } from './program/raster_program';
+import {rasterUniformValues} from './program/raster_program';
 
 import type Painter from './painter';
 import type SourceCache from '../source/source_cache';
@@ -28,7 +28,7 @@ function drawRaster(painter: Painter, sourceCache: SourceCache, layer: RasterSty
     const stencilMode = StencilMode.disabled;
     const colorMode = painter.colorModeForRenderPass();
     const minTileZ = coords.length && coords[0].overscaledZ;
-
+    const align = !painter.options.moving;
     for (const coord of coords) {
         // Set the lower zoom level to sublayer 0, and higher zoom levels to higher sublayers
         // Use gl.LESS to prevent double drawing in areas where tiles overlap.
@@ -36,7 +36,7 @@ function drawRaster(painter: Painter, sourceCache: SourceCache, layer: RasterSty
             layer.paint.get('raster-opacity') === 1 ? DepthMode.ReadWrite : DepthMode.ReadOnly, gl.LESS);
 
         const tile = sourceCache.getTile(coord);
-        const posMatrix = painter.transform.calculatePosMatrix(coord.toUnwrapped(), true);
+        const posMatrix = painter.transform.calculatePosMatrix(coord.toUnwrapped(), align);
 
         tile.registerFadeDuration(layer.paint.get('raster-fade-duration'));
 

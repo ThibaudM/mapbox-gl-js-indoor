@@ -1,11 +1,10 @@
 // @flow
 
-import { CanonicalTileID } from './tile_id';
-import { Event, ErrorEvent, Evented } from '../util/evented';
-import { getImage, ResourceType } from '../util/ajax';
-import browser from '../util/browser';
+import {CanonicalTileID} from './tile_id';
+import {Event, ErrorEvent, Evented} from '../util/evented';
+import {getImage, ResourceType} from '../util/ajax';
 import EXTENT from '../data/extent';
-import { RasterBoundsArray } from '../data/array_types';
+import {RasterBoundsArray} from '../data/array_types';
 import rasterBoundsAttributes from '../data/raster_bounds_attributes';
 import SegmentVector from '../data/segment';
 import Texture from '../render/texture';
@@ -50,7 +49,7 @@ type Coordinates = [[number, number], [number, number], [number, number], [numbe
  *     [-76.5295386314392, 39.17683392507606],
  *     [-76.54520273208618, 39.17876344106642]
  * ]);
- * 
+ *
  * // update url and coordinates simultaneously
  * mySource.updateImage({
  *    url: 'https://www.mapbox.com/images/bar.png',
@@ -61,7 +60,7 @@ type Coordinates = [[number, number], [number, number], [number, number], [numbe
  *        [-76.54520273208618, 39.17876344106642]
  *    ]
  * })
- * 
+ *
  * map.removeSource('some id');  // remove
  * @see [Add an image](https://www.mapbox.com/mapbox-gl-js/example/image-on-a-map/)
  */
@@ -79,11 +78,12 @@ class ImageSource extends Evented implements Source {
     dispatcher: Dispatcher;
     map: Map;
     texture: Texture | null;
-    image: ImageData;
+    image: HTMLImageElement;
     tileID: CanonicalTileID;
     _boundsArray: RasterBoundsArray;
     boundsBuffer: VertexBuffer;
     boundsSegments: SegmentVector;
+    _loaded: boolean;
 
     /**
      * @private
@@ -99,6 +99,7 @@ class ImageSource extends Evented implements Source {
         this.maxzoom = 22;
         this.tileSize = 512;
         this.tiles = {};
+        this._loaded = false;
 
         this.setEventedParent(eventedParent);
 
@@ -106,15 +107,17 @@ class ImageSource extends Evented implements Source {
     }
 
     load(newCoordinates?: Coordinates, successCallback?: () => void) {
+        this._loaded = false;
         this.fire(new Event('dataloading', {dataType: 'source'}));
 
         this.url = this.options.url;
 
-        getImage(this.map._transformRequest(this.url, ResourceType.Image), (err, image) => {
+        getImage(this.map._requestManager.transformRequest(this.url, ResourceType.Image), (err, image) => {
+            this._loaded = true;
             if (err) {
                 this.fire(new ErrorEvent(err));
             } else if (image) {
-                this.image = browser.getImageData(image);
+                this.image = image;
                 if (newCoordinates) {
                     this.coordinates = newCoordinates;
                 }
@@ -124,6 +127,10 @@ class ImageSource extends Evented implements Source {
                 this._finishLoading();
             }
         });
+    }
+
+    loaded(): boolean {
+        return this._loaded;
     }
 
     /**

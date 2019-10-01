@@ -1,11 +1,11 @@
 // @flow
 
-import { packUint8ToFloat } from '../shaders/encode_attribute';
+import {packUint8ToFloat} from '../shaders/encode_attribute';
 import Color from '../style-spec/util/color';
-import { supportsPropertyExpression } from '../style-spec/util/properties';
-import { register, serialize, deserialize } from '../util/web_worker_transfer';
-import { PossiblyEvaluatedPropertyValue } from '../style/properties';
-import { StructArrayLayout1f4, StructArrayLayout2f8, StructArrayLayout4f16, PatternLayoutArray } from './array_types';
+import {supportsPropertyExpression} from '../style-spec/util/properties';
+import {register, serialize, deserialize} from '../util/web_worker_transfer';
+import {PossiblyEvaluatedPropertyValue} from '../style/properties';
+import {StructArrayLayout1f4, StructArrayLayout2f8, StructArrayLayout4f16, PatternLayoutArray} from './array_types';
 
 import EvaluationParameters from '../style/evaluation_parameters';
 import FeaturePositionMap from './feature_position_map';
@@ -14,7 +14,6 @@ import {
     Uniform1f,
     UniformColor,
     Uniform4f,
-    type UniformBindings,
     type UniformLocations
 } from '../render/uniform_binding';
 
@@ -33,6 +32,13 @@ import type {
 } from '../style-spec/expression';
 import type {PossiblyEvaluated} from '../style/properties';
 import type {FeatureStates} from '../source/source_state';
+import type {FormattedSection} from '../style-spec/expression/types/formatted';
+
+export type BinderUniform = {
+    name: string,
+    property: string,
+    binding: Uniform<any>
+};
 
 function packColor(color: Color): [number, number] {
     return [
@@ -73,7 +79,7 @@ interface Binder<T> {
     maxValue: number;
     uniformNames: Array<string>;
 
-    populatePaintArray(length: number, feature: Feature, imagePositions: {[string]: ImagePosition}): void;
+    populatePaintArray(length: number, feature: Feature, imagePositions: {[string]: ImagePosition}, formattedSection?: FormattedSection): void;
     updatePaintArray(start: number, length: number, feature: Feature, featureState: FeatureState, imagePositions: {[string]: ImagePosition}): void;
     upload(Context): void;
     destroy(): void;
@@ -84,7 +90,7 @@ interface Binder<T> {
     setUniforms(context: Context, uniform: Uniform<*>, globals: GlobalProperties,
         currentValue: PossiblyEvaluatedPropertyValue<T>, uniformName: string): void;
 
-    getBinding(context: Context, location: WebGLUniformLocation): $Subtype<Uniform<*>>;
+    getBinding(context: Context, location: WebGLUniformLocation): $Shape<Uniform<*>>;
 }
 
 class ConstantBinder<T> implements Binder<T> {
@@ -97,7 +103,7 @@ class ConstantBinder<T> implements Binder<T> {
     constructor(value: T, names: Array<string>, type: string) {
         this.value = value;
         this.names = names;
-        this.uniformNames = this.names.map(name =>`u_${name}`);
+        this.uniformNames = this.names.map(name => `u_${name}`);
         this.type = type;
         this.maxValue = -Infinity;
     }
@@ -116,7 +122,7 @@ class ConstantBinder<T> implements Binder<T> {
         uniform.set(currentValue.constantOr(this.value));
     }
 
-    getBinding(context: Context, location: WebGLUniformLocation): $Subtype<Uniform<any>> {
+    getBinding(context: Context, location: WebGLUniformLocation): $Shape<Uniform<any>> {
         return (this.type === 'color') ?
             new UniformColor(context, location) :
             new Uniform1f(context, location);
@@ -144,7 +150,7 @@ class CrossFadedConstantBinder<T> implements Binder<T> {
     constructor(value: T, names: Array<string>, type: string) {
         this.value = value;
         this.names = names;
-        this.uniformNames = this.names.map(name =>`u_${name}`);
+        this.uniformNames = this.names.map(name => `u_${name}`);
         this.type = type;
         this.maxValue = -Infinity;
         this.patternPositions = {patternTo: null, patternFrom: null};
@@ -171,7 +177,7 @@ class CrossFadedConstantBinder<T> implements Binder<T> {
         if (uniformName === "u_pattern_from" && pos.patternFrom) uniform.set(pos.patternFrom);
     }
 
-    getBinding(context: Context, location: WebGLUniformLocation): $Subtype<Uniform<any>> {
+    getBinding(context: Context, location: WebGLUniformLocation): $Shape<Uniform<any>> {
         return new Uniform4f(context, location);
     }
 }
@@ -191,7 +197,7 @@ class SourceExpressionBinder<T> implements Binder<T> {
         this.expression = expression;
         this.names = names;
         this.type = type;
-        this.uniformNames = this.names.map(name =>`a_${name}`);
+        this.uniformNames = this.names.map(name => `a_${name}`);
         this.maxValue = -Infinity;
         this.paintVertexAttributes = names.map((name) =>
             ({
@@ -210,13 +216,13 @@ class SourceExpressionBinder<T> implements Binder<T> {
 
     setConstantPatternPositions() {}
 
-    populatePaintArray(newLength: number, feature: Feature) {
+    populatePaintArray(newLength: number, feature: Feature, imagePositions: {[string]: ImagePosition}, formattedSection?: FormattedSection) {
         const paintArray = this.paintVertexArray;
 
         const start = paintArray.length;
         paintArray.reserve(newLength);
 
-        const value = this.expression.evaluate(new EvaluationParameters(0), feature, {});
+        const value = this.expression.evaluate(new EvaluationParameters(0), feature, {}, [], formattedSection);
 
         if (this.type === 'color') {
             const color = packColor(value);
@@ -291,7 +297,7 @@ class CompositeExpressionBinder<T> implements Binder<T> {
     constructor(expression: CompositeExpression, names: Array<string>, type: string, useIntegerZoom: boolean, zoom: number, layout: Class<StructArray>) {
         this.expression = expression;
         this.names = names;
-        this.uniformNames = this.names.map(name =>`a_${name}_t`);
+        this.uniformNames = this.names.map(name => `u_${name}_t`);
         this.type = type;
         this.useIntegerZoom = useIntegerZoom;
         this.zoom = zoom;
@@ -314,14 +320,14 @@ class CompositeExpressionBinder<T> implements Binder<T> {
 
     setConstantPatternPositions() {}
 
-    populatePaintArray(newLength: number, feature: Feature) {
+    populatePaintArray(newLength: number, feature: Feature, imagePositions: {[string]: ImagePosition}, formattedSection?: FormattedSection) {
         const paintArray = this.paintVertexArray;
 
         const start = paintArray.length;
         paintArray.reserve(newLength);
 
-        const min = this.expression.evaluate(new EvaluationParameters(this.zoom), feature, {});
-        const max = this.expression.evaluate(new EvaluationParameters(this.zoom + 1), feature, {});
+        const min = this.expression.evaluate(new EvaluationParameters(this.zoom), feature, {}, [], formattedSection);
+        const max = this.expression.evaluate(new EvaluationParameters(this.zoom + 1), feature, {}, [], formattedSection);
 
         if (this.type === 'color') {
             const minColor = packColor(min);
@@ -340,7 +346,7 @@ class CompositeExpressionBinder<T> implements Binder<T> {
     updatePaintArray(start: number, end: number, feature: Feature, featureState: FeatureState) {
         const paintArray = this.paintVertexArray;
 
-        const min = this.expression.evaluate({zoom: this.zoom    }, feature, featureState);
+        const min = this.expression.evaluate({zoom: this.zoom}, feature, featureState);
         const max = this.expression.evaluate({zoom: this.zoom + 1}, feature, featureState);
 
         if (this.type === 'color') {
@@ -412,7 +418,7 @@ class CrossFadedCompositeBinder<T> implements Binder<T> {
         this.expression = expression;
         this.names = names;
         this.type = type;
-        this.uniformNames = this.names.map(name =>`a_${name}_t`);
+        this.uniformNames = this.names.map(name => `u_${name}_t`);
         this.useIntegerZoom = useIntegerZoom;
         this.zoom = zoom;
         this.maxValue = -Infinity;
@@ -444,14 +450,14 @@ class CrossFadedCompositeBinder<T> implements Binder<T> {
 
         const zoomInArray = this.zoomInPaintVertexArray;
         const zoomOutArray = this.zoomOutPaintVertexArray;
-        const { layerId } = this;
+        const {layerId} = this;
         const start = zoomInArray.length;
 
         zoomInArray.reserve(length);
         zoomOutArray.reserve(length);
 
         if (imagePositions && feature.patterns && feature.patterns[layerId]) {
-            const { min, mid, max } = feature.patterns[layerId];
+            const {min, mid, max} = feature.patterns[layerId];
 
             const imageMin = imagePositions[min];
             const imageMid = imagePositions[mid];
@@ -480,7 +486,7 @@ class CrossFadedCompositeBinder<T> implements Binder<T> {
 
         const zoomInArray = this.zoomInPaintVertexArray;
         const zoomOutArray = this.zoomOutPaintVertexArray;
-        const { layerId } = this;
+        const {layerId} = this;
 
         if (imagePositions && feature.patterns && feature.patterns[layerId]) {
             const {min, mid, max} = feature.patterns[layerId];
@@ -520,7 +526,7 @@ class CrossFadedCompositeBinder<T> implements Binder<T> {
         uniform.set(0);
     }
 
-    getBinding(context: Context, location: WebGLUniformLocation): $Subtype<Uniform<any>> {
+    getBinding(context: Context, location: WebGLUniformLocation): $Shape<Uniform<any>> {
         return new Uniform1f(context, location);
     }
 }
@@ -606,10 +612,10 @@ export default class ProgramConfiguration {
         return self;
     }
 
-    populatePaintArrays(newLength: number, feature: Feature, index: number, imagePositions: {[string]: ImagePosition}) {
+    populatePaintArrays(newLength: number, feature: Feature, index: number, imagePositions: {[string]: ImagePosition}, formattedSection?: FormattedSection) {
         for (const property in this.binders) {
             const binder = this.binders[property];
-            binder.populatePaintArray(newLength, feature, imagePositions);
+            binder.populatePaintArray(newLength, feature, imagePositions, formattedSection);
         }
         if (feature.id !== undefined) {
             this._featureMap.add(+feature.id, index, this._bufferOffset, newLength);
@@ -650,7 +656,7 @@ export default class ProgramConfiguration {
     defines(): Array<string> {
         const result = [];
         for (const property in this.binders) {
-            result.push.apply(result, this.binders[property].defines());
+            result.push(...this.binders[property].defines());
         }
         return result;
     }
@@ -659,26 +665,25 @@ export default class ProgramConfiguration {
         return this._buffers;
     }
 
-    getUniforms(context: Context, locations: UniformLocations): UniformBindings {
-        const result = {};
+    getUniforms(context: Context, locations: UniformLocations): Array<BinderUniform> {
+        const uniforms = [];
         for (const property in this.binders) {
             const binder = this.binders[property];
             for (const name of binder.uniformNames) {
-                result[name] = binder.getBinding(context, locations[name]);
+                if (locations[name]) {
+                    const binding = binder.getBinding(context, locations[name]);
+                    uniforms.push({name, property, binding});
+                }
             }
         }
-        return result;
+        return uniforms;
     }
 
-    setUniforms<Properties: Object>(context: Context, uniformBindings: UniformBindings, properties: PossiblyEvaluated<Properties>, globals: GlobalProperties) {
+    setUniforms<Properties: Object>(context: Context, binderUniforms: Array<BinderUniform>, properties: PossiblyEvaluated<Properties>, globals: GlobalProperties) {
         // Uniform state bindings are owned by the Program, but we set them
         // from within the ProgramConfiguraton's binder members.
-
-        for (const property in this.binders) {
-            const binder = this.binders[property];
-            for (const uniformName of binder.uniformNames) {
-                binder.setUniforms(context, uniformBindings[uniformName], globals, properties.get(property), uniformName);
-            }
+        for (const {name, property, binding} of binderUniforms) {
+            this.binders[property].setUniforms(context, binding, globals, properties.get(property), name);
         }
     }
 
@@ -739,9 +744,9 @@ export class ProgramConfigurationSet<Layer: TypedStyleLayer> {
         this.needsUpload = false;
     }
 
-    populatePaintArrays(length: number, feature: Feature, index: number, imagePositions: {[string]: ImagePosition}) {
+    populatePaintArrays(length: number, feature: Feature, index: number, imagePositions: {[string]: ImagePosition}, formattedSection?: FormattedSection) {
         for (const key in this.programConfigurations) {
-            this.programConfigurations[key].populatePaintArrays(length, feature, index, imagePositions);
+            this.programConfigurations[key].populatePaintArrays(length, feature, index, imagePositions, formattedSection);
         }
         this.needsUpload = true;
     }

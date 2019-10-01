@@ -1,15 +1,15 @@
 // @flow
 
-import { Event, Evented } from '../../util/evented';
+import {Event, Evented} from '../../util/evented';
 import DOM from '../../util/dom';
 import window from '../../util/window';
-import { extend, bindAll, warnOnce } from '../../util/util';
+import {extend, bindAll, warnOnce} from '../../util/util';
 import assert from 'assert';
 import LngLat from '../../geo/lng_lat';
 import Marker from '../marker';
 
 import type Map from '../map';
-import type { AnimationOptions, CameraOptions } from '../camera';
+import type {AnimationOptions, CameraOptions} from '../camera';
 
 type Options = {
     positionOptions?: PositionOptions,
@@ -43,7 +43,7 @@ function checkGeolocationSupport(callback) {
         // http://caniuse.com/#feat=permissions-api
         // Test for the case where a browser disables Geolocation because of an
         // insecure origin
-        window.navigator.permissions.query({ name: 'geolocation' }).then((p) => {
+        window.navigator.permissions.query({name: 'geolocation'}).then((p) => {
             supportsGeolocation = p.state !== 'denied';
             callback(supportsGeolocation);
         });
@@ -74,7 +74,7 @@ function checkGeolocationSupport(callback) {
  * @implements {IControl}
  * @param {Object} [options]
  * @param {Object} [options.positionOptions={enableHighAccuracy: false, timeout: 6000}] A Geolocation API [PositionOptions](https://developer.mozilla.org/en-US/docs/Web/API/PositionOptions) object.
- * @param {Object} [options.fitBoundsOptions={maxZoom: 15}] A [`fitBounds`](#Map#fitBounds) options object to use when the map is panned and zoomed to the user's location. The default is to use a `maxZoom` of 15 to limit how far the map will zoom in for very accurate locations.
+ * @param {Object} [options.fitBoundsOptions={maxZoom: 15}] A [`fitBounds`](#map#fitbounds) options object to use when the map is panned and zoomed to the user's location. The default is to use a `maxZoom` of 15 to limit how far the map will zoom in for very accurate locations.
  * @param {Object} [options.trackUserLocation=false] If `true` the Geolocate Control becomes a toggle button and when active the map will receive updates to the user's location as it changes.
  * @param {Object} [options.showUserLocation=true] By default a dot will be shown on the map at the user's location. Set to `false` to disable.
  *
@@ -187,8 +187,10 @@ class GeolocateControl extends Evented {
     _updateCamera(position: Position) {
         const center = new LngLat(position.coords.longitude, position.coords.latitude);
         const radius = position.coords.accuracy;
+        const bearing = this._map.getBearing();
+        const options = extend({bearing}, this.options.fitBoundsOptions);
 
-        this._map.fitBounds(center.toBounds(radius), this.options.fitBoundsOptions, {
+        this._map.fitBounds(center.toBounds(radius), options, {
             geolocateSource: true // tag this camera change so it won't cause the control to change to background state
         });
     }
@@ -268,7 +270,8 @@ class GeolocateControl extends Evented {
             `${className}-icon ${className}-geolocate`,
             this._container);
         this._geolocateButton.type = 'button';
-        this._geolocateButton.setAttribute('aria-label', 'Geolocate');
+        this._geolocateButton.title = 'Find my location';
+        this._geolocateButton.setAttribute('aria-label', 'Find my location');
 
         if (this.options.trackUserLocation) {
             this._geolocateButton.setAttribute('aria-pressed', 'false');
@@ -293,7 +296,8 @@ class GeolocateControl extends Evented {
         // the watch mode to background watch, so that the marker is updated but not the camera.
         if (this.options.trackUserLocation) {
             this._map.on('movestart', (event) => {
-                if (!event.geolocateSource && this._watchState === 'ACTIVE_LOCK') {
+                const fromResize = event.originalEvent && event.originalEvent.type === 'resize';
+                if (!event.geolocateSource && this._watchState === 'ACTIVE_LOCK' && !fromResize) {
                     this._watchState = 'BACKGROUND';
                     this._geolocateButton.classList.add('mapboxgl-ctrl-geolocate-background');
                     this._geolocateButton.classList.remove('mapboxgl-ctrl-geolocate-active');
@@ -431,7 +435,6 @@ export default GeolocateControl;
  * BACKGROUND_ERROR
  *    There was an error from the Geolocation API while trying to show (but not track) the user location.
  */
-
 
 /**
  * Fired on each Geolocation API position update which returned as success.

@@ -204,7 +204,7 @@ export function uuid(): string {
     function b(a) {
         return a ? (a ^ Math.random() * 16 >> a / 4).toString(16) :
         //$FlowFixMe: Flow doesn't like the implied array literal conversion here
-        ([1e7] + -[1e3] + -4e3 + -8e3 + -1e11).replace(/[018]/g, b);
+            ([1e7] + -[1e3] + -4e3 + -8e3 + -1e11).replace(/[018]/g, b);
     }
     return b();
 }
@@ -286,7 +286,7 @@ export function filterObject(input: Object, iterator: Function, context?: Object
 }
 
 import deepEqual from '../style-spec/util/deep_equal';
-export { deepEqual };
+export {deepEqual};
 
 /**
  * Deeply clones two objects.
@@ -446,4 +446,23 @@ export function storageAvailable(type: string): boolean {
     } catch (e) {
         return false;
     }
+}
+
+// The following methods are from https://developer.mozilla.org/en-US/docs/Web/API/WindowBase64/Base64_encoding_and_decoding#The_Unicode_Problem
+//Unicode compliant base64 encoder for strings
+export function b64EncodeUnicode(str: string) {
+    return window.btoa(
+        encodeURIComponent(str).replace(/%([0-9A-F]{2})/g,
+            (match, p1) => {
+                return String.fromCharCode(Number('0x' + p1)); //eslint-disable-line
+            }
+        )
+    );
+}
+
+// Unicode compliant decoder for base64-encoded strings
+export function b64DecodeUnicode(str: string) {
+    return decodeURIComponent(window.atob(str).split('').map((c) => {
+        return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2); //eslint-disable-line
+    }).join(''));
 }

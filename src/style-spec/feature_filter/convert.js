@@ -1,8 +1,8 @@
 // @flow
 
-import { isExpressionFilter } from './index';
+import {isExpressionFilter} from './index';
 
-import type { FilterSpecification } from '../types';
+import type {FilterSpecification} from '../types';
 
 type ExpectedTypes = {[string]: 'string' | 'number' | 'boolean'};
 
@@ -92,7 +92,7 @@ function _convertFilter(filter: FilterSpecification, expectedTypes: ExpectedType
         return ['any'].concat(children);
     } else if (op === 'all') {
         const children = (filter: any).slice(1).map(f => _convertFilter(f, expectedTypes));
-        return ['all'].concat(children);
+        return children.length > 1 ? ['all'].concat(children) : [].concat(...children);
     } else if (op === 'none') {
         return ['!', _convertFilter(['any'].concat(filter.slice(1)), {})];
     } else if (op === 'in') {
@@ -187,7 +187,9 @@ function convertInOp(property: string, values: Array<any>, negate = false) {
     }
 
     if (uniformTypes && (type === 'string' || type === 'number')) {
-        return ['match', get, values, !negate, negate];
+        // Match expressions must have unique values.
+        const uniqueValues = values.sort().filter((v, i) => i === 0 || values[i - 1] !== v);
+        return ['match', get, uniqueValues, !negate, negate];
     }
 
     return [ negate ? 'all' : 'any' ].concat(

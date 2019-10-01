@@ -1,4 +1,4 @@
-import { test } from 'mapbox-gl-js-test';
+import {test} from '../../util/test';
 
 /* eslint-disable import/namespace */
 import * as spec from '../../../src/style-spec/style-spec';
@@ -36,7 +36,8 @@ function validSchema(k, t, obj, ref, version, kind) {
         'text-transform-enum',
         'visibility-enum',
         'property-type',
-        'formatted'
+        'formatted',
+        'image'
     ]);
     const keys = [
         'default',
@@ -61,7 +62,8 @@ function validSchema(k, t, obj, ref, version, kind) {
         'minimum',
         'period',
         'requires',
-        'sdk-support'
+        'sdk-support',
+        'overridable'
     ];
 
     // Schema object.

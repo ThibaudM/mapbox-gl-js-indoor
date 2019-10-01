@@ -6,7 +6,7 @@ import Point from '@mapbox/point-geometry';
 import MercatorCoordinate from '../geo/mercator_coordinate';
 
 import assert from 'assert';
-import { register } from '../util/web_worker_transfer';
+import {register} from '../util/web_worker_transfer';
 
 export class CanonicalTileID {
     z: number;
@@ -92,6 +92,10 @@ export class OverscaledTileID {
     }
 
     isChildOf(parent: OverscaledTileID) {
+        if (parent.wrap !== this.wrap) {
+            // We can't be a child if we're in a different world copy
+            return false;
+        }
         const zDifference = this.canonical.z - parent.canonical.z;
         // We're first testing for z == 0, to avoid a 32 bit shift, which is undefined.
         return parent.overscaledZ === 0 || (
@@ -162,7 +166,6 @@ function calculateKey(wrap: number, z: number, x: number, y: number) {
     const dim = 1 << z;
     return ((dim * dim * wrap + dim * y + x) * 32) + z;
 }
-
 
 function getQuadkey(z, x, y) {
     let quadkey = '', mask;

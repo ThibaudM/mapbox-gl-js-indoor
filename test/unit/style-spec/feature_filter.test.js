@@ -1,4 +1,4 @@
-import { test } from 'mapbox-gl-js-test';
+import {test} from '../../util/test';
 import createFilter from '../../../src/style-spec/feature_filter';
 import convertFilter from '../../../src/style-spec/feature_filter/convert';
 
@@ -26,12 +26,12 @@ test('filter', t => {
     });
 
     t.test('expression, collator comparison', (t) => {
-        const caseSensitive = createFilter(['==', ['string', ['get', 'x']], ['string', ['get', 'y']], ['collator', { 'case-sensitive': true }]]);
+        const caseSensitive = createFilter(['==', ['string', ['get', 'x']], ['string', ['get', 'y']], ['collator', {'case-sensitive': true}]]);
         t.equal(caseSensitive({zoom: 0}, {properties: {x: 'a', y: 'b'}}), false);
         t.equal(caseSensitive({zoom: 0}, {properties: {x: 'a', y: 'A'}}), false);
         t.equal(caseSensitive({zoom: 0}, {properties: {x: 'a', y: 'a'}}), true);
 
-        const caseInsensitive = createFilter(['==', ['string', ['get', 'x']], ['string', ['get', 'y']], ['collator', { 'case-sensitive': false }]]);
+        const caseInsensitive = createFilter(['==', ['string', ['get', 'x']], ['string', ['get', 'y']], ['collator', {'case-sensitive': false}]]);
         t.equal(caseInsensitive({zoom: 0}, {properties: {x: 'a', y: 'b'}}), false);
         t.equal(caseInsensitive({zoom: 0}, {properties: {x: 'a', y: 'A'}}), true);
         t.equal(caseInsensitive({zoom: 0}, {properties: {x: 'a', y: 'a'}}), true);
@@ -97,6 +97,69 @@ test('convert legacy filters to expressions', t => {
         t.equal(f({zoom: 0}, {properties: {x: null, y: 1, z: 1}}), true);
         t.equal(f({zoom: 0}, {properties: {x: 1, y: null, z: 1}}), true);
         t.equal(f({zoom: 0}, {properties: {x: null, y: null, z: 1}}), false);
+        t.end();
+    });
+
+    t.test('flattens nested, single child all expressions', (t) => {
+        const filter = [
+            "all",
+            [
+                "in",
+                "$type",
+                "Polygon",
+                "LineString",
+                "Point"
+            ],
+            [
+                "all",
+                ["in", "type", "island"]
+            ]
+        ];
+
+        const expected = [
+            "all",
+            [
+                "match",
+                ["geometry-type"],
+                ["LineString", "Point", "Polygon"],
+                true,
+                false
+            ],
+            [
+                "match",
+                ["get", "type"],
+                ["island"],
+                true,
+                false
+            ]
+        ];
+
+        const converted = convertFilter(filter);
+        t.same(converted, expected);
+        t.end();
+    });
+
+    t.test('removes duplicates when outputting match expressions', (t) => {
+        const filter = [
+            "in",
+            "$id",
+            1,
+            2,
+            3,
+            2,
+            1
+        ];
+
+        const expected = [
+            "match",
+            ["id"],
+            [1, 2, 3],
+            true,
+            false
+        ];
+
+        const converted = convertFilter(filter);
+        t.same(converted, expected);
         t.end();
     });
 
@@ -374,7 +437,7 @@ function legacyFilterTests(t, filter) {
     });
 
     t.test('in, large_multiple', (t) => {
-        const values = Array.apply(null, {length: 2000}).map(Number.call, Number);
+        const values = Array.from({length: 2000}).map(Number.call, Number);
         values.reverse();
         const f = filter(['in', 'foo'].concat(values));
         t.equal(f({zoom: 0}, {properties: {foo: 0}}), true);
@@ -385,7 +448,7 @@ function legacyFilterTests(t, filter) {
     });
 
     t.test('in, large_multiple, heterogeneous', (t) => {
-        const values = Array.apply(null, {length: 2000}).map(Number.call, Number);
+        const values = Array.from({length: 2000}).map(Number.call, Number);
         values.push('a');
         values.unshift('b');
         const f = filter(['in', 'foo'].concat(values));
@@ -455,7 +518,7 @@ function legacyFilterTests(t, filter) {
     });
 
     t.test('!in, large_multiple', (t) => {
-        const f = filter(['!in', 'foo'].concat(Array.apply(null, {length: 2000}).map(Number.call, Number)));
+        const f = filter(['!in', 'foo'].concat(Array.from({length: 2000}).map(Number.call, Number)));
         t.equal(f({zoom: 0}, {properties: {foo: 0}}), false);
         t.equal(f({zoom: 0}, {properties: {foo: 1}}), false);
         t.equal(f({zoom: 0}, {properties: {foo: 1999}}), false);

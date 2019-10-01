@@ -1,7 +1,7 @@
 // @flow
 
-import { Event, ErrorEvent, Evented } from '../util/evented';
-import { getJSON } from '../util/ajax';
+import {Event, ErrorEvent, Evented} from '../util/evented';
+import {getJSON} from '../util/ajax';
 import GeoJsonHelper from './geojson_helper';
 
 // import type Map from '../ui/map';
@@ -92,10 +92,10 @@ class Indoor extends Evented {
         // });
 
         // Load Style
-        const request = this._map._transformRequest(styleUrl);
+        const request = this._map._requestManager.transformRequest(styleUrl);
         getJSON(request, (error, json) => {
             if (error) {
-                this.fire(new ErrorEvent('error', { error }));
+                this.fire(new ErrorEvent('error', {error}));
                 return;
             }
             for (let i = 0; i < json.length; i++) {
@@ -112,7 +112,6 @@ class Indoor extends Evented {
                 this._map.setLayoutProperty(layerId, 'visibility', 'none');
             });
 
-
             this.initializeFilters();
 
             this._styleLoaded = true;
@@ -120,7 +119,6 @@ class Indoor extends Evented {
         });
 
     }
-
 
     createPoiLayers(metaLayer) {
 
@@ -157,9 +155,8 @@ class Indoor extends Evented {
         this.loadLevels();
 
         this._loaded = true;
-        this.fire(new Event('loaded', { sourceId: SOURCE_ID }));
+        this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
     }
-
 
     removeIndoorLayer() {
 
@@ -172,7 +169,6 @@ class Indoor extends Evented {
         // }
         // // this.loadLevels();
     }
-
 
     initializeFilters() {
 
@@ -188,11 +184,10 @@ class Indoor extends Evented {
                 // So we have to handle two lists
                 this.indoorLayers.push(layer.id);
                 this.indoorFilters.push(currentFilter);
-                // this.indoorLayers.set(layer.id, currentFilter); 
+                // this.indoorLayers.set(layer.id, currentFilter);
             }
         }
     }
-
 
     loadLevels() {
 
@@ -201,9 +196,7 @@ class Indoor extends Evented {
         let maxLevel = 0;
         let minLevel = 0;
 
-
-        const features = this._map.querySourceFeatures(SOURCE_ID, { filter: ["has", "level"] });
-
+        const features = this._map.querySourceFeatures(SOURCE_ID, {filter: ["has", "level"]});
 
         for (let i = 0; i < features.length; i++) {
 
@@ -230,15 +223,13 @@ class Indoor extends Evented {
         if (minLevel === 0 && maxLevel === 0) {
             this.fire(new Event('building.removed'));
         } else {
-            this.fire(new Event('building.added', { minLevel: minLevel, maxLevel: maxLevel }));
+            this.fire(new Event('building.added', {minLevel, maxLevel}));
         }
-
 
         // First time try to set current level to 0
         if (this.selectedLevel === undefined && (minLevel !== 0 || maxLevel !== 0)) {
             this.setLevel(Math.max(this.minLevel, 0));
         }
-
 
         if (minLevel !== 0 || maxLevel !== 0) {
             if (this.selectedLevel > this.maxLevel) {
@@ -249,9 +240,7 @@ class Indoor extends Evented {
         }
     }
 
-
     setLevel(level) {
-
 
         if (level > this.maxLevel || level < this.minLevel) {
             return;
@@ -265,7 +254,6 @@ class Indoor extends Evented {
             this._map.setLayoutProperty(buildingsLayerId, 'visibility', 'none');
         }
 
-
         for (let i = 0; i < this.indoorLayers.length; i++) {
             const layerId = this.indoorLayers[i];
             const filter = this.indoorFilters[i];
@@ -274,9 +262,8 @@ class Indoor extends Evented {
 
         if (this.selectedLevel !== level) {
             this.selectedLevel = level;
-            this.fire(new Event('level.changed', { 'level': level }));
+            this.fire(new Event('level.changed', {level}));
         }
-
 
     }
 

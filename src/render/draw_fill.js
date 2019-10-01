@@ -29,7 +29,8 @@ function drawFill(painter: Painter, sourceCache: SourceCache, layer: FillStyleLa
     const colorMode = painter.colorModeForRenderPass();
 
     const pattern = layer.paint.get('fill-pattern');
-    const pass = (!pattern.constantOr((1: any)) &&
+    const pass = painter.opaquePassEnabledForLayer() &&
+        (!pattern.constantOr((1: any)) &&
         color.constantOr(Color.transparent).a === 1 &&
         opacity.constantOr(0) === 1) ? 'opaque' : 'translucent';
 
@@ -73,11 +74,9 @@ function drawFillTiles(painter, sourceCache, layer, coords, depthMode, colorMode
         drawMode = gl.LINES;
     }
 
-
     for (const coord of coords) {
         const tile = sourceCache.getTile(coord);
         if (image && !tile.patternsLoaded()) continue;
-
 
         const bucket: ?FillBucket = (tile.getBucket(layer): any);
         if (!bucket) continue;
@@ -93,8 +92,9 @@ function drawFillTiles(painter, sourceCache, layer, coords, depthMode, colorMode
 
         const constantPattern = patternProperty.constantOr(null);
         if (constantPattern && tile.imageAtlas) {
-            const posTo = tile.imageAtlas.patternPositions[constantPattern.to];
-            const posFrom = tile.imageAtlas.patternPositions[constantPattern.from];
+            const atlas = tile.imageAtlas;
+            const posTo = atlas.patternPositions[constantPattern.to.toString()];
+            const posFrom = atlas.patternPositions[constantPattern.from.toString()];
             if (posTo && posFrom) programConfiguration.setConstantPatternPositions(posTo, posFrom);
         }
 

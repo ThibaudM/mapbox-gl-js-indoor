@@ -23,7 +23,8 @@ export type PopulateParameters = {
     featureIndex: FeatureIndex,
     iconDependencies: {},
     patternDependencies: {},
-    glyphDependencies: {}
+    glyphDependencies: {},
+    availableImages: Array<string>
 }
 
 export type IndexedFeature = {
@@ -39,7 +40,8 @@ export type BucketFeature = {|
     properties: Object,
     type: 1 | 2 | 3,
     id?: any,
-    +patterns: {[string]: {"min": string, "mid": string, "max": string}}
+    +patterns: {[string]: {"min": string, "mid": string, "max": string}},
+    sortKey?: number
 |};
 
 /**
@@ -70,7 +72,7 @@ export interface Bucket {
     hasPattern: boolean;
     +layers: Array<any>;
     +stateDependentLayers: Array<any>;
-
+    +stateDependentLayerIds: Array<string>;
     populate(features: Array<IndexedFeature>, options: PopulateParameters): void;
     update(states: FeatureStates, vtLayer: VectorTileLayer, imagePositions: {[string]: ImagePosition}): void;
     isEmpty(): boolean;
@@ -107,7 +109,9 @@ export function deserialize(input: Array<Bucket>, style: Style): {[string]: Buck
         // look up StyleLayer objects from layer ids (since we don't
         // want to waste time serializing/copying them from the worker)
         (bucket: any).layers = layers;
-        (bucket: any).stateDependentLayers = layers.filter((l) => l.isStateDependent());
+        if ((bucket: any).stateDependentLayerIds) {
+            (bucket: any).stateDependentLayers = (bucket: any).stateDependentLayerIds.map((lId) => layers.filter((l) => l.id === lId)[0]);
+        }
         for (const layer of layers) {
             output[layer.id] = bucket;
         }

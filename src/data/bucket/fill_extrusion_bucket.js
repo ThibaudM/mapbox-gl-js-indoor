@@ -1,17 +1,19 @@
 // @flow
 
-import { FillExtrusionLayoutArray } from '../array_types';
+import {FillExtrusionLayoutArray} from '../array_types';
 
-import { members as layoutAttributes } from './fill_extrusion_attributes';
+import {members as layoutAttributes} from './fill_extrusion_attributes';
 import SegmentVector from '../segment';
-import { ProgramConfigurationSet } from '../program_configuration';
-import { TriangleIndexArray } from '../index_array_type';
+import {ProgramConfigurationSet} from '../program_configuration';
+import {TriangleIndexArray} from '../index_array_type';
 import EXTENT from '../extent';
 import earcut from 'earcut';
+import mvt from '@mapbox/vector-tile';
+const vectorTileFeatureTypes = mvt.VectorTileFeature.types;
 import classifyRings from '../../util/classify_rings';
 import assert from 'assert';
 const EARCUT_MAX_RINGS = 500;
-import { register } from '../../util/web_worker_transfer';
+import {register} from '../../util/web_worker_transfer';
 import {hasPattern, addPatternDependencies} from './pattern_bucket_features';
 import loadGeometry from '../load_geometry';
 import EvaluationParameters from '../../style/evaluation_parameters';
@@ -32,7 +34,6 @@ import type Point from '@mapbox/point-geometry';
 import type {FeatureStates} from '../../source/source_state';
 import type {ImagePosition} from '../../render/image_atlas';
 
-
 const FACTOR = Math.pow(2, 13);
 
 function addVertex(vertexArray, x, y, nx, ny, nz, t, e) {
@@ -49,7 +50,6 @@ function addVertex(vertexArray, x, y, nx, ny, nz, t, e) {
     );
 }
 
-
 class FillExtrusionBucket implements Bucket {
     index: number;
     zoom: number;
@@ -57,6 +57,7 @@ class FillExtrusionBucket implements Bucket {
     layers: Array<FillExtrusionStyleLayer>;
     layerIds: Array<string>;
     stateDependentLayers: Array<FillExtrusionStyleLayer>;
+    stateDependentLayerIds: Array<string>;
 
     layoutVertexArray: FillExtrusionLayoutArray;
     layoutVertexBuffer: VertexBuffer;
@@ -82,6 +83,8 @@ class FillExtrusionBucket implements Bucket {
         this.indexArray = new TriangleIndexArray();
         this.programConfigurations = new ProgramConfigurationSet(layoutAttributes, options.layers, options.zoom);
         this.segments = new SegmentVector();
+        this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
+
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters) {
@@ -94,9 +97,9 @@ class FillExtrusionBucket implements Bucket {
             const geometry = loadGeometry(feature);
 
             const patternFeature: BucketFeature = {
-                sourceLayerIndex: sourceLayerIndex,
-                index: index,
-                geometry: geometry,
+                sourceLayerIndex,
+                index,
+                geometry,
                 properties: feature.properties,
                 type: feature.type,
                 patterns: {}
@@ -112,7 +115,7 @@ class FillExtrusionBucket implements Bucket {
                 this.addFeature(patternFeature, geometry, index, {});
             }
 
-            options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
+            options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index, true);
         }
     }
 
@@ -215,6 +218,11 @@ class FillExtrusionBucket implements Bucket {
             if (segment.vertexLength + numVertices > SegmentVector.MAX_VERTEX_ARRAY_LENGTH) {
                 segment = this.segments.prepareSegment(numVertices, this.layoutVertexArray, this.indexArray);
             }
+
+            //Only triangulate and draw the area of the feature if it is a polygon
+            //Other feature types (e.g. LineString) do not have area, so triangulation is pointless / undefined
+            if (vectorTileFeatureTypes[feature.type] !== 'Polygon')
+                continue;
 
             const flattened = [];
             const holeIndices = [];

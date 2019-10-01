@@ -1,16 +1,16 @@
 // @flow
 
-import { FillLayoutArray } from '../array_types';
+import {FillLayoutArray} from '../array_types';
 
-import { members as layoutAttributes } from './fill_attributes';
+import {members as layoutAttributes} from './fill_attributes';
 import SegmentVector from '../segment';
-import { ProgramConfigurationSet } from '../program_configuration';
-import { LineIndexArray, TriangleIndexArray } from '../index_array_type';
+import {ProgramConfigurationSet} from '../program_configuration';
+import {LineIndexArray, TriangleIndexArray} from '../index_array_type';
 import earcut from 'earcut';
 import classifyRings from '../../util/classify_rings';
 import assert from 'assert';
 const EARCUT_MAX_RINGS = 500;
-import { register } from '../../util/web_worker_transfer';
+import {register} from '../../util/web_worker_transfer';
 import {hasPattern, addPatternDependencies} from './pattern_bucket_features';
 import loadGeometry from '../load_geometry';
 import EvaluationParameters from '../../style/evaluation_parameters';
@@ -37,6 +37,8 @@ class FillBucket implements Bucket {
     layers: Array<FillStyleLayer>;
     layerIds: Array<string>;
     stateDependentLayers: Array<FillStyleLayer>;
+    stateDependentLayerIds: Array<string>;
+    patternFeatures: Array<BucketFeature>;
 
     layoutVertexArray: FillLayoutArray;
     layoutVertexBuffer: VertexBuffer;
@@ -52,7 +54,6 @@ class FillBucket implements Bucket {
     segments: SegmentVector;
     segments2: SegmentVector;
     uploaded: boolean;
-    features: Array<BucketFeature>;
 
     constructor(options: BucketParameters<FillStyleLayer>) {
         this.zoom = options.zoom;
@@ -61,6 +62,7 @@ class FillBucket implements Bucket {
         this.layerIds = this.layers.map(layer => layer.id);
         this.index = options.index;
         this.hasPattern = false;
+        this.patternFeatures = [];
 
         this.layoutVertexArray = new FillLayoutArray();
         this.indexArray = new TriangleIndexArray();
@@ -68,36 +70,56 @@ class FillBucket implements Bucket {
         this.programConfigurations = new ProgramConfigurationSet(layoutAttributes, options.layers, options.zoom);
         this.segments = new SegmentVector();
         this.segments2 = new SegmentVector();
+        this.stateDependentLayerIds = this.layers.filter((l) => l.isStateDependent()).map((l) => l.id);
     }
 
     populate(features: Array<IndexedFeature>, options: PopulateParameters) {
-        this.features = [];
         this.hasPattern = hasPattern('fill', this.layers, options);
+        const fillSortKey = this.layers[0].layout.get('fill-sort-key');
+        const bucketFeatures = [];
 
         for (const {feature, index, sourceLayerIndex} of features) {
             if (!this.layers[0]._featureFilter(new EvaluationParameters(this.zoom), feature)) continue;
 
             const geometry = loadGeometry(feature);
+            const sortKey = fillSortKey ?
+                fillSortKey.evaluate(feature, {}, options.availableImages) :
+                undefined;
 
-            const patternFeature: BucketFeature = {
-                sourceLayerIndex: sourceLayerIndex,
-                index: index,
-                geometry: geometry,
+            const bucketFeature: BucketFeature = {
+                id: feature.id,
                 properties: feature.properties,
                 type: feature.type,
-                patterns: {}
+                sourceLayerIndex,
+                index,
+                geometry,
+                patterns: {},
+                sortKey
             };
 
-            if (typeof feature.id !== 'undefined') {
-                patternFeature.id = feature.id;
-            }
+            bucketFeatures.push(bucketFeature);
+        }
+
+        if (fillSortKey) {
+            bucketFeatures.sort((a, b) => {
+                // a.sortKey is always a number when in use
+                return ((a.sortKey: any): number) - ((b.sortKey: any): number);
+            });
+        }
+
+        for (const bucketFeature of bucketFeatures) {
+            const {geometry, index, sourceLayerIndex} = bucketFeature;
 
             if (this.hasPattern) {
-                this.features.push(addPatternDependencies('fill', this.layers, patternFeature, this.zoom, options));
+                const patternFeature = addPatternDependencies('fill', this.layers, bucketFeature, this.zoom, options);
+                // pattern features are added only once the pattern is loaded into the image atlas
+                // so are stored during populate until later updated with positions by tile worker in addFeatures
+                this.patternFeatures.push(patternFeature);
             } else {
-                this.addFeature(patternFeature, geometry, index, {});
+                this.addFeature(bucketFeature, geometry, index, {});
             }
 
+            const feature = features[index].feature;
             options.featureIndex.insert(feature, geometry, index, sourceLayerIndex, this.index);
         }
     }
@@ -108,9 +130,8 @@ class FillBucket implements Bucket {
     }
 
     addFeatures(options: PopulateParameters, imagePositions: {[string]: ImagePosition}) {
-        for (const feature of this.features) {
-            const {geometry} = feature;
-            this.addFeature(feature, geometry, feature.index, imagePositions);
+        for (const feature of this.patternFeatures) {
+            this.addFeature(feature, feature.geometry, feature.index, imagePositions);
         }
     }
 
@@ -199,6 +220,6 @@ class FillBucket implements Bucket {
     }
 }
 
-register('FillBucket', FillBucket, {omit: ['layers', 'features']});
+register('FillBucket', FillBucket, {omit: ['layers', 'patternFeatures']});
 
 export default FillBucket;

@@ -1,7 +1,5 @@
 {
   "query-tests/regressions/mapbox-gl-js#4494": "https://github.com/mapbox/mapbox-gl-js/issues/2716",
-  "render-tests/combinations/fill-extrusion-translucent--background-opaque": "https://github.com/mapbox/mapbox-gl-js/issues/5831",
-  "render-tests/combinations/fill-extrusion-translucent--fill-opaque": "https://github.com/mapbox/mapbox-gl-js/issues/5831",
   "render-tests/geojson/inline-linestring-fill": "current behavior is arbitrary",
   "render-tests/map-mode/static": "https://github.com/mapbox/mapbox-gl-js/issues/5649",
   "render-tests/map-mode/tile": "skip - mapbox-gl-js does not need to render tiles",
@@ -12,5 +10,11 @@
   "render-tests/regressions/mapbox-gl-js#3682": "skip - true",
   "render-tests/runtime-styling/image-update-icon": "skip - https://github.com/mapbox/mapbox-gl-js/issues/4804",
   "render-tests/runtime-styling/image-update-pattern": "skip - https://github.com/mapbox/mapbox-gl-js/issues/4804",
-  "render-tests/mixed-zoom/z10-z11": "current behavior conflicts with https://github.com/mapbox/mapbox-gl-js/pull/6803. can be fixed when https://github.com/mapbox/api-maps/issues/1480 is done"
+  "render-tests/mixed-zoom/z10-z11": "current behavior conflicts with https://github.com/mapbox/mapbox-gl-js/pull/6803. can be fixed when https://github.com/mapbox/api-maps/issues/1480 is done",
+  "render-tests/fill-extrusion-pattern/tile-buffer": "https://github.com/mapbox/mapbox-gl-js/issues/4403",
+  "render-tests/symbol-sort-key/text-ignore-placement": "skip - text drawn over icons",
+  "render-tests/text-variable-anchor/remember-last-placement": "skip - not sure this is correct behavior",
+  "render-tests/text-writing-mode/point_label/cjk-variable-anchors-vertical-horizontal-mode-icon-text-fit": "https://github.com/mapbox/mapbox-gl-js/issues/8583",
+  "render-tests/text-writing-mode/point_label/mixed-multiline-vertical-horizontal-mode-icon-text-fit": "https://github.com/mapbox/mapbox-gl-js/issues/8583",
+  "render-tests/icon-image/icon-sdf-non-sdf-one-layer": "skip - render sdf icon and normal icon in one layer"
 }

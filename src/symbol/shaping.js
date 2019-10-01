@@ -1,11 +1,14 @@
 // @flow
 
+import assert from 'assert';
 import {
     charHasUprightVerticalOrientation,
-    charAllowsIdeographicBreaking
+    charAllowsIdeographicBreaking,
+    charInComplexShapingScript
 } from '../util/script_detection';
 import verticalizePunctuation from '../util/verticalize_punctuation';
-import { plugin as rtlTextPlugin } from '../source/rtl_text_plugin';
+import {plugin as rtlTextPlugin} from '../source/rtl_text_plugin';
+import ONE_EM from './one_em';
 
 import type {StyleGlyph} from '../style/style_glyph';
 import type {ImagePosition} from '../render/image_atlas';
@@ -17,7 +20,7 @@ const WritingMode = {
     horizontalOnly: 3
 };
 
-export { shapeText, shapeIcon, WritingMode };
+export {shapeText, shapeIcon, fitIconToText, getAnchorAlignment, WritingMode};
 
 // The position of a glyph relative to the text's anchor point.
 export type PositionedGlyph = {
@@ -26,7 +29,8 @@ export type PositionedGlyph = {
     y: number,
     vertical: boolean,
     scale: number,
-    fontStack: string
+    fontStack: string,
+    sectionIndex: number
 };
 
 // A collection of positioned glyphs and some metadata
@@ -36,11 +40,14 @@ export type Shaping = {
     bottom: number,
     left: number,
     right: number,
-    writingMode: 1 | 2
+    writingMode: 1 | 2,
+    lineCount: number,
+    text: string,
+    yOffset: number,
 };
 
-type SymbolAnchor = 'center' | 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
-type TextJustify = 'left' | 'center' | 'right';
+export type SymbolAnchor = 'center' | 'left' | 'right' | 'top' | 'bottom' | 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+export type TextJustify = 'left' | 'center' | 'right';
 
 class TaggedString {
     text: string;
@@ -75,6 +82,10 @@ class TaggedString {
 
     getSection(index: number): { scale: number, fontStack: string } {
         return this.sections[this.sectionIndex[index]];
+    }
+
+    getSectionIndex(index: number): number {
+        return this.sectionIndex[index];
     }
 
     getCharCode(index: number): number {
@@ -143,24 +154,14 @@ function shapeText(text: Formatted,
                    textJustify: TextJustify,
                    spacing: number,
                    translate: [number, number],
-                   verticalHeight: number,
-                   writingMode: 1 | 2): Shaping | false {
+                   writingMode: 1 | 2,
+                   allowVerticalPlacement: boolean,
+                   symbolPlacement: string): Shaping | false {
     const logicalInput = TaggedString.fromFeature(text, defaultFontStack);
 
     if (writingMode === WritingMode.vertical) {
         logicalInput.verticalizePunctuation();
     }
-
-    const positionedGlyphs = [];
-    const shaping = {
-        positionedGlyphs,
-        text: logicalInput,
-        top: translate[1],
-        bottom: translate[1],
-        left: translate[0],
-        right: translate[0],
-        writingMode
-    };
 
     let lines: Array<TaggedString>;
 
@@ -170,7 +171,7 @@ function shapeText(text: Formatted,
         lines = [];
         const untaggedLines =
             processBidirectionalText(logicalInput.toString(),
-                                     determineLineBreaks(logicalInput, spacing, maxWidth, glyphs));
+                                     determineLineBreaks(logicalInput, spacing, maxWidth, glyphs, symbolPlacement));
         for (const line of untaggedLines) {
             const taggedLine = new TaggedString();
             taggedLine.text = line;
@@ -187,7 +188,7 @@ function shapeText(text: Formatted,
         const processedLines =
             processStyledBidirectionalText(logicalInput.text,
                                            logicalInput.sectionIndex,
-                                           determineLineBreaks(logicalInput, spacing, maxWidth, glyphs));
+                                           determineLineBreaks(logicalInput, spacing, maxWidth, glyphs, symbolPlacement));
         for (const line of processedLines) {
             const taggedLine = new TaggedString();
             taggedLine.text = line[0];
@@ -196,17 +197,30 @@ function shapeText(text: Formatted,
             lines.push(taggedLine);
         }
     } else {
-        lines = breakLines(logicalInput, determineLineBreaks(logicalInput, spacing, maxWidth, glyphs));
+        lines = breakLines(logicalInput, determineLineBreaks(logicalInput, spacing, maxWidth, glyphs, symbolPlacement));
     }
 
-    shapeLines(shaping, glyphs, lines, lineHeight, textAnchor, textJustify, writingMode, spacing, verticalHeight);
+    const positionedGlyphs = [];
+    const shaping = {
+        positionedGlyphs,
+        text: logicalInput.toString(),
+        top: translate[1],
+        bottom: translate[1],
+        left: translate[0],
+        right: translate[0],
+        writingMode,
+        lineCount: lines.length,
+        yOffset: -17 // the y offset *should* be part of the font metadata
+    };
 
-    if (!positionedGlyphs.length)
-        return false;
+    shapeLines(shaping, glyphs, lines, lineHeight, textAnchor, textJustify, writingMode, spacing, allowVerticalPlacement);
+    if (!positionedGlyphs.length) return false;
 
-    shaping.text = shaping.text.toString();
     return shaping;
 }
+
+// using computed properties due to https://github.com/facebook/flow/issues/380
+/* eslint no-useless-computed-key: 0 */
 
 const whitespace: {[number]: boolean} = {
     [0x09]: true, // tab
@@ -273,12 +287,18 @@ function calculateBadness(lineWidth: number,
     return raggedness + Math.abs(penalty) * penalty;
 }
 
-function calculatePenalty(codePoint: number, nextCodePoint: number) {
+function calculatePenalty(codePoint: number, nextCodePoint: number, penalizableIdeographicBreak: boolean) {
     let penalty = 0;
     // Force break on newline
     if (codePoint === 0x0a) {
         penalty -= 10000;
     }
+    // Penalize breaks between characters that allow ideographic breaking because
+    // they are less preferable than breaks at spaces (or zero width spaces).
+    if (penalizableIdeographicBreak) {
+        penalty += 150;
+    }
+
     // Penalize open parenthesis at end of line
     if (codePoint === 0x28 || codePoint === 0xff08) {
         penalty += 50;
@@ -340,8 +360,9 @@ function leastBadBreaks(lastLineBreak: ?Break): Array<number> {
 function determineLineBreaks(logicalInput: TaggedString,
                              spacing: number,
                              maxWidth: number,
-                             glyphMap: {[string]: {[number]: ?StyleGlyph}}): Array<number> {
-    if (!maxWidth)
+                             glyphMap: {[string]: {[number]: ?StyleGlyph}},
+                             symbolPlacement: string): Array<number> {
+    if (symbolPlacement !== 'point')
         return [];
 
     if (!logicalInput)
@@ -349,6 +370,8 @@ function determineLineBreaks(logicalInput: TaggedString,
 
     const potentialLineBreaks = [];
     const targetWidth = determineAverageLineWidth(logicalInput, spacing, maxWidth, glyphMap);
+
+    const hasServerSuggestedBreakpoints = logicalInput.text.indexOf("\u200b") >= 0;
 
     let currentX = 0;
 
@@ -363,18 +386,19 @@ function determineLineBreaks(logicalInput: TaggedString,
 
         // Ideographic characters, spaces, and word-breaking punctuation that often appear without
         // surrounding spaces.
-        if ((i < logicalInput.length() - 1) &&
-            (breakable[codePoint] ||
-                charAllowsIdeographicBreaking(codePoint))) {
+        if ((i < logicalInput.length() - 1)) {
+            const ideographicBreak = charAllowsIdeographicBreaking(codePoint);
+            if (breakable[codePoint] || ideographicBreak) {
 
-            potentialLineBreaks.push(
-                evaluateBreak(
-                    i + 1,
-                    currentX,
-                    targetWidth,
-                    potentialLineBreaks,
-                    calculatePenalty(codePoint, logicalInput.getCharCode(i + 1)),
-                    false));
+                potentialLineBreaks.push(
+                    evaluateBreak(
+                        i + 1,
+                        currentX,
+                        targetWidth,
+                        potentialLineBreaks,
+                        calculatePenalty(codePoint, logicalInput.getCharCode(i + 1), ideographicBreak && hasServerSuggestedBreakpoints),
+                        false));
+            }
         }
     }
 
@@ -417,7 +441,7 @@ function getAnchorAlignment(anchor: SymbolAnchor) {
         break;
     }
 
-    return { horizontalAlign, verticalAlign };
+    return {horizontalAlign, verticalAlign};
 }
 
 function shapeLines(shaping: Shaping,
@@ -428,12 +452,10 @@ function shapeLines(shaping: Shaping,
                     textJustify: TextJustify,
                     writingMode: 1 | 2,
                     spacing: number,
-                    verticalHeight: number) {
-    // the y offset *should* be part of the font metadata
-    const yOffset = -17;
+                    allowVerticalPlacement: boolean) {
 
     let x = 0;
-    let y = yOffset;
+    let y = shaping.yOffset;
 
     let maxLineLength = 0;
     const positionedGlyphs = shaping.positionedGlyphs;
@@ -455,6 +477,7 @@ function shapeLines(shaping: Shaping,
         const lineStartIndex = positionedGlyphs.length;
         for (let i = 0; i < line.length(); i++) {
             const section = line.getSection(i);
+            const sectionIndex = line.getSectionIndex(i);
             const codePoint = line.getCharCode(i);
             // We don't know the baseline, but since we're laying out
             // at 24 points, we can calculate how much it will move when
@@ -465,12 +488,17 @@ function shapeLines(shaping: Shaping,
 
             if (!glyph) continue;
 
-            if (!charHasUprightVerticalOrientation(codePoint) || writingMode === WritingMode.horizontal) {
-                positionedGlyphs.push({glyph: codePoint, x, y: y + baselineOffset, vertical: false, scale: section.scale, fontStack: section.fontStack});
+            if (writingMode === WritingMode.horizontal ||
+                // Don't verticalize glyphs that have no upright orientation if vertical placement is disabled.
+                (!allowVerticalPlacement && !charHasUprightVerticalOrientation(codePoint)) ||
+                // If vertical placement is ebabled, don't verticalize glyphs that
+                // are from complex text layout script, or whitespaces.
+                (allowVerticalPlacement && (whitespace[codePoint] || charInComplexShapingScript(codePoint)))) {
+                positionedGlyphs.push({glyph: codePoint, x, y: y + baselineOffset, vertical: false, scale: section.scale, fontStack: section.fontStack, sectionIndex});
                 x += glyph.metrics.advance * section.scale + spacing;
             } else {
-                positionedGlyphs.push({glyph: codePoint, x, y: baselineOffset, vertical: true, scale: section.scale, fontStack: section.fontStack});
-                x += verticalHeight * section.scale + spacing;
+                positionedGlyphs.push({glyph: codePoint, x, y: y + baselineOffset, vertical: true, scale: section.scale, fontStack: section.fontStack, sectionIndex});
+                x += ONE_EM * section.scale + spacing;
             }
         }
 
@@ -490,7 +518,7 @@ function shapeLines(shaping: Shaping,
     align(positionedGlyphs, justify, horizontalAlign, verticalAlign, maxLineLength, lineHeight, lines.length);
 
     // Calculate the bounding box
-    const height = y - yOffset;
+    const height = y - shaping.yOffset;
 
     shaping.top += -verticalAlign * height;
     shaping.bottom = shaping.top + height;
@@ -553,4 +581,47 @@ function shapeIcon(image: ImagePosition, iconOffset: [number, number], iconAncho
     const y1 = dy - image.displaySize[1] * verticalAlign;
     const y2 = y1 + image.displaySize[1];
     return {image, top: y1, bottom: y2, left: x1, right: x2};
+}
+
+function fitIconToText(shapedIcon: PositionedIcon, shapedText: Shaping,
+                       textFit: string,
+                       padding: [ number, number, number, number ],
+                       iconOffset: [ number, number ], fontScale: number): PositionedIcon {
+    assert(textFit !== 'none');
+    assert(Array.isArray(padding) && padding.length === 4);
+    assert(Array.isArray(iconOffset) && iconOffset.length === 2);
+
+    const image = shapedIcon.image;
+
+    // We don't respect the icon-anchor, because icon-text-fit is set. Instead,
+    // the icon will be centered on the text, then stretched in the given
+    // dimensions.
+
+    const textLeft = shapedText.left * fontScale;
+    const textRight = shapedText.right * fontScale;
+
+    let top, right, bottom, left;
+    if (textFit === 'width' || textFit === 'both') {
+        // Stretched horizontally to the text width
+        left = iconOffset[0] + textLeft - padding[3];
+        right = iconOffset[0] + textRight + padding[1];
+    } else {
+        // Centered on the text
+        left = iconOffset[0] + (textLeft + textRight - image.displaySize[0]) / 2;
+        right = left + image.displaySize[0];
+    }
+
+    const textTop = shapedText.top * fontScale;
+    const textBottom = shapedText.bottom * fontScale;
+    if (textFit === 'height' || textFit === 'both') {
+        // Stretched vertically to the text height
+        top = iconOffset[1] + textTop - padding[0];
+        bottom = iconOffset[1] + textBottom + padding[2];
+    } else {
+        // Centered on the text
+        top = iconOffset[1] + (textTop + textBottom - image.displaySize[1]) / 2;
+        bottom = top + image.displaySize[1];
+    }
+
+    return {image, top, right, bottom, left};
 }

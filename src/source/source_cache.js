@@ -1,17 +1,17 @@
 // @flow
 
-import { create as createSource } from './source';
+import {create as createSource} from './source';
 
 import Tile from './tile';
-import { Event, ErrorEvent, Evented } from '../util/evented';
+import {Event, ErrorEvent, Evented} from '../util/evented';
 import TileCache from './tile_cache';
 import MercatorCoordinate from '../geo/mercator_coordinate';
-import { keysDifference } from '../util/util';
+import {keysDifference} from '../util/util';
 import EXTENT from '../data/extent';
 import Context from '../gl/context';
 import Point from '@mapbox/point-geometry';
 import browser from '../util/browser';
-import { OverscaledTileID } from './tile_id';
+import {OverscaledTileID} from './tile_id';
 import assert from 'assert';
 import SourceFeatureState from './source_state';
 
@@ -119,6 +119,7 @@ class SourceCache extends Evented {
     loaded(): boolean {
         if (this._sourceErrored) { return true; }
         if (!this._sourceLoaded) { return false; }
+        if (!this._source.loaded()) { return false; }
         for (const t in this._tiles) {
             const tile = this._tiles[t];
             if (tile.state !== 'loaded' && tile.state !== 'errored')
@@ -169,7 +170,9 @@ class SourceCache extends Evented {
 
         this._state.coalesceChanges(this._tiles, this.map ? this.map.painter : null);
         for (const i in this._tiles) {
-            this._tiles[i].upload(context);
+            const tile = this._tiles[i];
+            tile.upload(context);
+            tile.prepare(this.map.style.imageManager);
         }
     }
 
@@ -257,7 +260,7 @@ class SourceCache extends Evented {
         if (this.getSource().type === 'raster-dem' && tile.dem) this._backfillDEM(tile);
         this._state.initializeTileState(tile, this.map ? this.map.painter : null);
 
-        this._source.fire(new Event('data', {dataType: 'source', tile: tile, coord: tile.tileID}));
+        this._source.fire(new Event('data', {dataType: 'source', tile, coord: tile.tileID}));
     }
 
     /**
@@ -642,7 +645,6 @@ class SourceCache extends Evented {
         if (tile)
             return tile;
 
-
         tile = this._cache.getAndRemove(tileID);
         if (tile) {
             this._setTileReloadTimer(tileID.key, tile);
@@ -667,7 +669,7 @@ class SourceCache extends Evented {
 
         tile.uses++;
         this._tiles[tileID.key] = tile;
-        if (!cached) this._source.fire(new Event('dataloading', {tile: tile, coord: tile.tileID, dataType: 'source'}));
+        if (!cached) this._source.fire(new Event('dataloading', {tile, coord: tile.tileID, dataType: 'source'}));
 
         return tile;
     }
@@ -706,7 +708,7 @@ class SourceCache extends Evented {
         if (tile.uses > 0)
             return;
 
-        if (tile.hasData()) {
+        if (tile.hasData() && tile.state !== 'reloading') {
             this._cache.add(tile.tileID, tile, tile.getExpiryTimeout());
         } else {
             tile.aborted = true;
@@ -731,11 +733,23 @@ class SourceCache extends Evented {
     /**
      * Search through our current tiles and attempt to find the tiles that
      * cover the given bounds.
-     * @param queryGeometry coordinates of the corners of bounding rectangle
+     * @param pointQueryGeometry coordinates of the corners of bounding rectangle
      * @returns {Array<Object>} result items have {tile, minX, maxX, minY, maxY}, where min/max bounding values are the given bounds transformed in into the coordinate space of this tile.
      */
-    tilesIn(queryGeometry: Array<MercatorCoordinate>, maxPitchScaleFactor: number) {
+    tilesIn(pointQueryGeometry: Array<Point>, maxPitchScaleFactor: number, has3DLayer: boolean) {
+
         const tileResults = [];
+
+        const transform = this.transform;
+        if (!transform) return tileResults;
+
+        const cameraPointQueryGeometry = has3DLayer ?
+            transform.getCameraQueryGeometry(pointQueryGeometry) :
+            pointQueryGeometry;
+
+        const queryGeometry = pointQueryGeometry.map((p) => transform.pointCoordinate(p));
+        const cameraQueryGeometry = cameraPointQueryGeometry.map((p) => transform.pointCoordinate(p));
+
         const ids = this.getIds();
 
         let minX = Infinity;
@@ -743,14 +757,12 @@ class SourceCache extends Evented {
         let maxX = -Infinity;
         let maxY = -Infinity;
 
-        for (let k = 0; k < queryGeometry.length; k++) {
-            const p = queryGeometry[k];
+        for (const p of cameraQueryGeometry) {
             minX = Math.min(minX, p.x);
             minY = Math.min(minY, p.y);
             maxX = Math.max(maxX, p.x);
             maxY = Math.max(maxY, p.y);
         }
-
 
         for (let i = 0; i < ids.length; i++) {
             const tile = this._tiles[ids[i]];
@@ -759,7 +771,7 @@ class SourceCache extends Evented {
                 continue;
             }
             const tileID = tile.tileID;
-            const scale = Math.pow(2, this.transform.zoom - tile.tileID.overscaledZ);
+            const scale = Math.pow(2, transform.zoom - tile.tileID.overscaledZ);
             const queryPadding = maxPitchScaleFactor * tile.queryPadding * EXTENT / tile.tileSize / scale;
 
             const tileSpaceBounds = [
@@ -770,16 +782,15 @@ class SourceCache extends Evented {
             if (tileSpaceBounds[0].x - queryPadding < EXTENT && tileSpaceBounds[0].y - queryPadding < EXTENT &&
                 tileSpaceBounds[1].x + queryPadding >= 0 && tileSpaceBounds[1].y + queryPadding >= 0) {
 
-                const tileSpaceQueryGeometry = [];
-                for (let j = 0; j < queryGeometry.length; j++) {
-                    tileSpaceQueryGeometry.push(tileID.getTilePoint(queryGeometry[j]));
-                }
+                const tileSpaceQueryGeometry: Array<Point> = queryGeometry.map((c) => tileID.getTilePoint(c));
+                const tileSpaceCameraQueryGeometry = cameraQueryGeometry.map((c) => tileID.getTilePoint(c));
 
                 tileResults.push({
-                    tile: tile,
-                    tileID: tileID,
-                    queryGeometry: [tileSpaceQueryGeometry],
-                    scale: scale
+                    tile,
+                    tileID,
+                    queryGeometry: tileSpaceQueryGeometry,
+                    cameraQueryGeometry: tileSpaceCameraQueryGeometry,
+                    scale
                 });
             }
         }
@@ -819,6 +830,15 @@ class SourceCache extends Evented {
     setFeatureState(sourceLayer?: string, feature: number, state: Object) {
         sourceLayer = sourceLayer || '_geojsonTileLayer';
         this._state.updateState(sourceLayer, feature, state);
+    }
+
+    /**
+     * Resets the value of a particular state key for a feature
+     * @private
+     */
+    removeFeatureState(sourceLayer?: string, feature?: number, key?: string) {
+        sourceLayer = sourceLayer || '_geojsonTileLayer';
+        this._state.removeFeatureState(sourceLayer, feature, key);
     }
 
     /**
