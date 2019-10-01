@@ -189,12 +189,12 @@ class Indoor extends Evented {
                 if (m == null || m.length != 3) continue;                
                 const min = parseInt(m[1]);
                 const max = parseInt(m[2]);
-                if(minLevel > min) minLevel = propertyLevel;
+                if(minLevel > min) minLevel = min;
                 if(maxLevel < max) maxLevel = max;
             }
 
-            if(minLevel > propertyLevel) minLevel = propertyLevel;
-            if(maxLevel < propertyLevel) maxLevel = propertyLevel;
+            if(minLevel > propertyLevel) minLevel = parseInt(propertyLevel);
+            if(maxLevel < propertyLevel) maxLevel = parseInt(propertyLevel);
         }
        
         if(this.minLevel == minLevel && this.maxLevel == maxLevel)
