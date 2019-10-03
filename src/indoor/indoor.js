@@ -18,11 +18,7 @@ class Indoor extends Evented {
     selectedLevel: ?number;
     minLevel: number;
     maxLevel: number;
-    indoorLayers: Array<String>;
-    indoorFilters: Array<Json>;
-    _sourceLoaded: boolean;
-    _styleLoaded: boolean;
-    _loaded: boolean;
+    indoorFilters: Object;
     _timestampLoadLevels: number;
     _currentTimeout: boolean;
 
@@ -34,6 +30,7 @@ class Indoor extends Evented {
 
         bindAll([
             '_onSourceDataChanged',
+            'loadLevels'
         ], this);
     }
 
@@ -41,33 +38,101 @@ class Indoor extends Evented {
         this.selectedLevel = undefined;
         this.minLevel = 0;
         this.maxLevel = 0;
-        this.indoorLayers = [];
-        this.indoorFilters = [];
-        this._sourceLoaded = false;
-        this._styleLoaded = false;
-        this._loaded = false;
+        this.indoorFilters = {};
         this._timestampLoadLevels = 0;
         this._currentTimeout = false;
     }
 
     createIndoorLayer(source: SourceSpecification, styleUrl: string, imagesUrl: any) {
 
-        if (this.loaded()) {
+        if (this._map.getSource('indoor')) {
             this._map.removeIndoorLayer();
         }
 
         this.initialize();
 
-        this._source = this._map.addSource(SOURCE_ID, {
-            type: "geojson",
-            data: source
-        });
+        Promise.resolve()
+            // Load Source
+            .then(() => {
 
-        this._source.on('data', this._onSourceDataChanged);
+                this._source = this._map.addSource(SOURCE_ID, {
+                    type: "geojson",
+                    data: source
+                });
 
-        // this._map.on('move', (e) => {
-        //     this.tryToLoadLevels();
-        // });
+                this._source.on('data', data => {
+                    if (data.dataType === "source" &&
+                        data.sourceDataType === "metadata") {
+                        this._source.off('data', this);
+                        Promise.resolve();
+                    }
+                });
+
+            })
+
+            // Load Layers from JSON style file
+            .then(() => {
+                const request = this._map._requestManager.transformRequest(styleUrl);
+                return new Promise((resolve, reject) => {
+                    getJSON(request, (error, json) => {
+                        if (error) {
+                            reject(error);
+                            return;
+                        }
+                        resolve(json);
+                    });
+                });
+            })
+
+            // Add layers and save filters
+            .then((json) => {
+                const saveFilter = layer => {
+                    // Fill indoorFilters with existing filters
+                    let currentFilter = this._map.getFilter(layer.id);
+                    if (!currentFilter) {
+                        currentFilter = ["all"];
+                    }
+                    this.indoorFilters[layer.id] = currentFilter;
+                };
+
+                for (let i = 0; i < json.length; i++) {
+                    const layer = json[i];
+
+                    if (layer.id === "poi-indoor") {
+                        this.createPoiLayers(layer).forEach(layer => {
+                            this._map.addLayer(layer);
+                            saveFilter(layer);
+                        });
+                    } else {
+                        this._map.addLayer(layer);
+                        saveFilter(layer);
+                    }
+
+                }
+            })
+
+            // Remove some layers for rendering
+            .then(() => {
+                const layersToRemove = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scalerank3', 'road-label-small'];
+                layersToRemove.forEach(layerId => {
+                    this._map.setLayoutProperty(layerId, 'visibility', 'none');
+                });
+            })
+
+            // End of creation
+            .then(() => {
+                this._source.on('data', this._onSourceDataChanged);
+
+                // We need to load levels at least once if user wants to call setLevel() after loaded event.
+                this.loadLevels();
+
+                this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
+            })
+
+            // Catch errors
+            .catch(error => {
+                this.fire(new ErrorEvent('error', {error}));
+            });
 
         // // Load images
         // const requestImages = this._map._transformRequest(imagesUrl);
@@ -95,90 +160,41 @@ class Indoor extends Evented {
         //         });
         //     }
         // });
-
-        // Load Style
-        const request = this._map._requestManager.transformRequest(styleUrl);
-        getJSON(request, (error, json) => {
-            if (error) {
-                this.fire(new ErrorEvent('error', {error}));
-                return;
-            }
-            for (let i = 0; i < json.length; i++) {
-                const layer = json[i];
-                if (layer.id === "poi-indoor") {
-                    this.createPoiLayers(layer);
-                } else {
-                    this._map.addLayer(layer);
-                }
-            }
-
-            const layersToRemove = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scalerank3', 'road-label-small'];
-            layersToRemove.forEach(layerId => {
-                this._map.setLayoutProperty(layerId, 'visibility', 'none');
-            });
-
-            this.initializeFilters();
-
-            this._styleLoaded = true;
-            this._endCreationProcess();
-        });
-
     }
 
-    _onSourceDataChanged(data) {
-
+    _onSourceDataChanged() {
         this.tryToLoadLevels();
-
-        if (data.dataType === "source" &&
-            data.sourceDataType === "metadata") {
-            this._sourceLoaded = true;
-            console.log("this._endCreationProcess()");
-            this._endCreationProcess();
-        }
     }
 
     createPoiLayers(metaLayer) {
 
-        GeoJsonHelper.generateOsmFilterTagsToMaki().forEach(poi => {
+        const newLayers = [];
+
+        const osmFilterTagsToMaki = GeoJsonHelper.generateOsmFilterTagsToMaki();
+        for (let i = 0; i < osmFilterTagsToMaki.length; i++) {
+            const poi = osmFilterTagsToMaki[i];
             const newLayer = JSON.parse(JSON.stringify(metaLayer));
             newLayer.id += `-${poi.maki}`;
             newLayer.filter = poi.filter;
             newLayer.layout['icon-image'] = (`${poi.maki}-15`);
-            this._map.addLayer(newLayer);
-        });
-
+            newLayers.push(newLayer);
+        }
+        return newLayers;
     }
 
     tryToLoadLevels() {
         if (new Date().getTime() - this._timestampLoadLevels > MIN_TIME_BETWEEN_LOADING_LEVELS) {
             this.loadLevels();
         } else if (!this._currentTimeout) {
-            const that = this;
             setTimeout(() => {
-                that.loadLevels();
-                that._currentTimeout = false;
+                this.loadLevels();
+                this._currentTimeout = false;
             }, MIN_TIME_BETWEEN_LOADING_LEVELS);
             this._currentTimeout = true;
         }
     }
 
-    _endCreationProcess() {
-
-        if (this._loaded || !this._sourceLoaded || !this._styleLoaded) {
-            return;
-        }
-        console.log("this._endCreationProcess() / this.loadLevels()");
-
-        // We need to load levels at least once if user wants to call setLevel() after loaded event.
-        this.loadLevels();
-
-        this._loaded = true;
-        this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
-    }
-
     removeIndoorLayer() {
-
-        // TODO remove source and layers
 
         this._source.off('data', this._onSourceDataChanged);
 
@@ -188,25 +204,6 @@ class Indoor extends Evented {
             }
         });
         this._map.removeSource(SOURCE_ID);
-    }
-
-    initializeFilters() {
-
-        for (const key in this._map.style._layers) {
-            const layer = this._map.style._layers[key];
-
-            if (SOURCE_ID === layer.source && layer.id !== "buildings" && layer.id !== "buildings-background") {
-                let currentFilter = this._map.getFilter(layer.id);
-                if (currentFilter == null) {
-                    currentFilter = ["all"];
-                }
-                // A map cannot be used due to the "Map keyword" which is already used by Mapbox
-                // So we have to handle two lists
-                this.indoorLayers.push(layer.id);
-                this.indoorFilters.push(currentFilter);
-                // this.indoorLayers.set(layer.id, currentFilter);
-            }
-        }
     }
 
     loadLevels() {
@@ -267,32 +264,15 @@ class Indoor extends Evented {
         }
         this.selectedLevel = level;
 
-        if (level > this.maxLevel || level < this.minLevel) {
-            return;
-        }
+        Object.keys(this.indoorFilters)
+            .forEach(layerId => {
+                const filter = this.indoorFilters[layerId];
+                this._map.setFilter(layerId, ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], level]]]);
 
-        const buildingsLayerId = this._map.getLayer("buildings").id;
-        const visibility = this._map.getLayoutProperty(buildingsLayerId, 'visibility');
-        if (level >= 0 && visibility === 'none') {
-            this._map.setLayoutProperty(buildingsLayerId, 'visibility', 'visible');
-        } else if (level < 0 && visibility === 'visible') {
-            this._map.setLayoutProperty(buildingsLayerId, 'visibility', 'none');
-        }
-
-        for (let i = 0; i < this.indoorLayers.length; i++) {
-            const layerId = this.indoorLayers[i];
-            const filter = this.indoorFilters[i];
-            this._map.setFilter(layerId, ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], level]]]);
-        }
+            });
 
         this.fire(new Event('level.changed', {level}));
-
     }
-
-    loaded() {
-        return this._loaded;
-    }
-
 }
 
 export default Indoor;

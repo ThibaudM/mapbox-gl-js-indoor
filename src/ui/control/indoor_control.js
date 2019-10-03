@@ -1,5 +1,6 @@
 // @flow
 
+import {bindAll} from '../../util/util';
 import DOM from '../../util/dom';
 import type Indoor from '../indoor/indoor';
 
@@ -19,6 +20,12 @@ class IndoorControl {
     constructor() {
         this._levelsButtons = {};
         this._selectedButton = null;
+
+        bindAll([
+            '_setSelected',
+            'loadNavigationBar',
+            'removeNavigationBar'
+        ], this);
     }
 
     onAdd(map) {
@@ -30,14 +37,9 @@ class IndoorControl {
         this._container.addEventListener('contextmenu', this._onContextMenu.bind(this));
         this._el = map.getCanvasContainer();
 
-
-        // If indoor layer is already loaded, update levels 
-        if (this._indoor.loaded()) {
-            this.loadLevels();
-
-            if (this._indoor.selectedLevel !== undefined) {
-                this._setSelected(map._indoor.selectedLevel);
-            }
+        // If indoor layer is already loaded, update levels
+        if (this._indoor.selectedLevel !== undefined) {
+            this._setSelected(map._indoor.selectedLevel);
         }
 
         // Register to indoor events
@@ -49,7 +51,6 @@ class IndoorControl {
 
         return this._container;
     }
-
 
     onRemove() {
 
@@ -81,7 +82,6 @@ class IndoorControl {
         // this._selectedButton = null;
     }
 
-
     _setSelected(level) {
 
         if (this._selectedButton != null) {
@@ -101,7 +101,6 @@ class IndoorControl {
         });
         return a;
     }
-
 
     _onContextMenu(e) {
         e.preventDefault();
