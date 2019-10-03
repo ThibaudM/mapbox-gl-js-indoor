@@ -3,6 +3,7 @@
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import {getJSON} from '../util/ajax';
 import GeoJsonHelper from './geojson_helper';
+import {bindAll} from '../util/util';
 
 // import type Map from '../ui/map';
 import type StyleLayer from './style_layer';
@@ -13,6 +14,7 @@ const SOURCE_ID = "indoor";
 class Indoor extends Evented {
 
     _map: Map;
+    _source: Source;
     selectedLevel: ?number;
     minLevel: number;
     maxLevel: number;
@@ -26,7 +28,16 @@ class Indoor extends Evented {
 
     constructor(map: Map) {
         super();
+
         this._map = map;
+        this.initialize();
+
+        bindAll([
+            '_onSourceDataChanged',
+        ], this);
+    }
+
+    initialize() {
         this.selectedLevel = undefined;
         this.minLevel = 0;
         this.maxLevel = 0;
@@ -39,26 +50,20 @@ class Indoor extends Evented {
         this._currentTimeout = false;
     }
 
-    createIndoorLayer(sourceUrl: string, styleUrl: string, imagesUrl: any) {
+    createIndoorLayer(source: SourceSpecification, styleUrl: string, imagesUrl: any) {
 
-        // Load source
-        const source = this._map.addSource(SOURCE_ID, {
+        if (this.loaded()) {
+            this._map.removeIndoorLayer();
+        }
+
+        this.initialize();
+
+        this._source = this._map.addSource(SOURCE_ID, {
             type: "geojson",
-            data: sourceUrl
+            data: source
         });
 
-        source.on('data', (e) => {
-            if (e.dataType == "source" &&
-                e.sourceDataType != "metadata" &&
-                e.sourceDataType != "content") {
-                this._sourceLoaded = true;
-                this._endCreationProcess();
-            }
-        });
-
-        source.on('data', () => {
-            this.tryToLoadLevels();
-        });
+        this._source.on('data', this._onSourceDataChanged);
 
         // this._map.on('move', (e) => {
         //     this.tryToLoadLevels();
@@ -120,6 +125,18 @@ class Indoor extends Evented {
 
     }
 
+    _onSourceDataChanged(data) {
+
+        this.tryToLoadLevels();
+
+        if (data.dataType === "source" &&
+            data.sourceDataType === "metadata") {
+            this._sourceLoaded = true;
+            console.log("this._endCreationProcess()");
+            this._endCreationProcess();
+        }
+    }
+
     createPoiLayers(metaLayer) {
 
         GeoJsonHelper.generateOsmFilterTagsToMaki().forEach(poi => {
@@ -150,6 +167,7 @@ class Indoor extends Evented {
         if (this._loaded || !this._sourceLoaded || !this._styleLoaded) {
             return;
         }
+        console.log("this._endCreationProcess() / this.loadLevels()");
 
         // We need to load levels at least once if user wants to call setLevel() after loaded event.
         this.loadLevels();
@@ -162,12 +180,14 @@ class Indoor extends Evented {
 
         // TODO remove source and layers
 
-        this._loaded = false;
-        // const index = this._sourceId.indexOf(sourceId);
-        // if (index > -1) {
-        //     this._sourceId.splice(index, 1);
-        // }
-        // // this.loadLevels();
+        this._source.off('data', this._onSourceDataChanged);
+
+        this._map.getStyle().layers.forEach(layer => {
+            if (layer.source === SOURCE_ID) {
+                this._map.removeLayer(layer.id);
+            }
+        });
+        this._map.removeSource(SOURCE_ID);
     }
 
     initializeFilters() {
@@ -242,6 +262,11 @@ class Indoor extends Evented {
 
     setLevel(level) {
 
+        if (this.selectedLevel === level) {
+            return;
+        }
+        this.selectedLevel = level;
+
         if (level > this.maxLevel || level < this.minLevel) {
             return;
         }
@@ -260,10 +285,7 @@ class Indoor extends Evented {
             this._map.setFilter(layerId, ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], level]]]);
         }
 
-        if (this.selectedLevel !== level) {
-            this.selectedLevel = level;
-            this.fire(new Event('level.changed', {level}));
-        }
+        this.fire(new Event('level.changed', {level}));
 
     }
 

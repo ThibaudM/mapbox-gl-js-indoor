@@ -279,6 +279,7 @@ class Map extends Camera {
     _mapId: number;
     _localIdeographFontFamily: string;
     _requestManager: RequestManager;
+    _indoor: Indoor;
 
     /**
      * The map's {@link ScrollZoomHandler}, which implements zooming in and out with a scroll wheel or trackpad.
@@ -348,6 +349,7 @@ class Map extends Camera {
         this._renderTaskQueue = new TaskQueue();
         this._controls = [];
         this._mapId = uniqueId();
+        this._indoor = new Indoor(this);
 
         this._requestManager = new RequestManager(options.transformRequest, options.accessToken);
 
@@ -427,9 +429,7 @@ class Map extends Camera {
         });
         this.on('dataloading', (event: MapDataEvent) => {
             this.fire(new Event(`${event.dataType}dataloading`, event));
-        });
-        
-        this._indoor = new Indoor(this);
+        });        
     }
 
     /*
@@ -2063,20 +2063,21 @@ class Map extends Camera {
     }
 
 
-    createIndoorLayer(sourceUrl:string, styleUrl:string) {
+    createIndoorLayer(source:SourceSpecification, styleUrl:string) {
 
         if (this.loaded()) {
-            this._indoor.createIndoorLayer(sourceUrl, styleUrl);
+            this._indoor.createIndoorLayer(source, styleUrl);
             return;
         }
 
         this.on('load', function () {
-            this._indoor.createIndoorLayer(sourceUrl, styleUrl);
+            this._indoor.createIndoorLayer(source, styleUrl);
         });
     }
 
-    removeIndoorLayer(sourceId) {
-        this._indoor.removeIndoorLayer(sourceId);
+
+    removeIndoorLayer() {
+        this._indoor.removeIndoorLayer();
     }
 
     setIndoorLevel(level) {
