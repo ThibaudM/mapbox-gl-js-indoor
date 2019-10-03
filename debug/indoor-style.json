@@ -470,44 +470,6 @@
     },
     {
         "filter": [
-            "has",
-            "building"
-        ],
-        "id": "buildings",
-        "type": "line",
-        "source": "indoor",
-        "paint": {
-            "line-color": "#000000",
-            "line-width": {
-                "base": 2,
-                "stops": [
-                    [
-                        16.5,
-                        0
-                    ],
-                    [
-                        18,
-                        2
-                    ]
-                ]
-            },
-            "line-opacity": {
-                "base": 1,
-                "stops": [
-                    [
-                        16.5,
-                        0
-                    ],
-                    [
-                        18,
-                        0
-                    ]
-                ]
-            }
-        }
-    },
-    {
-        "filter": [
             "filter-==",
             "indoor",
             "level"
