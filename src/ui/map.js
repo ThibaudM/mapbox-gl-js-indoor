@@ -2075,19 +2075,9 @@ class Map extends Camera {
         });
     }
 
-
     removeIndoorLayer() {
         this._indoor.removeIndoorLayer();
     }
-
-    setIndoorLevel(level) {
-        this._indoor.setLevel(level);
-    }
-
-    getSelectedIndoorLevel() {
-        return this._indoor.selectedLevel;
-    }
-
 
     /**
      * Gets and sets a Boolean indicating whether the map will render an outline

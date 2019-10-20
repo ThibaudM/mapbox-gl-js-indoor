@@ -68,6 +68,7 @@ class Transform {
         this.angle = 0;
         this._fov = 0.6435011087932844;
         this._pitch = 0;
+        this._level = 0;
         this._unmodified = true;
         this._posMatrixCache = {};
         this._alignedPosMatrixCache = {};
@@ -84,6 +85,7 @@ class Transform {
         clone.angle = this.angle;
         clone._fov = this._fov;
         clone._pitch = this._pitch;
+        clone._level = this._level;
         clone._unmodified = this._unmodified;
         clone._calcMatrices();
         return clone;
@@ -150,6 +152,13 @@ class Transform {
         this._unmodified = false;
         this._pitch = p;
         this._calcMatrices();
+    }
+
+    get level(): number {
+        return this._level;
+    }
+    set level(level: number) {
+        this._level = level;
     }
 
     get fov(): number {

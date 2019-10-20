@@ -41,6 +41,7 @@ export type CameraOptions = {
     zoom?: number,
     bearing?: number,
     pitch?: number,
+    level?: number,
     around?: LngLatLike
 };
 
@@ -80,6 +81,7 @@ class Camera extends Evented {
     _zooming: boolean;
     _rotating: boolean;
     _pitching: boolean;
+    _leveling: boolean;
 
     _bearingSnap: number;
     _easeEndTimeoutID: TimeoutID;
@@ -375,6 +377,18 @@ class Camera extends Evented {
         return this;
     }
 
+    getLevel(): number { return this.transform.level; }
+
+    setLevel(level: number, eventData?: Object) {
+        if (level !== null) {
+            this.jumpTo({level}, eventData);
+        } else {
+            this.transform.level = null;
+            this.fire(new Event('level', eventData));
+        }
+        return this;
+    }
+
     /**
      * @memberof Map#
      * @param {LatLngBoundsLike} bounds Calculate the center for these bounds in the viewport and use
@@ -604,7 +618,8 @@ class Camera extends Evented {
         const tr = this.transform;
         let zoomChanged = false,
             bearingChanged = false,
-            pitchChanged = false;
+            pitchChanged = false,
+            levelChanged = false;
 
         if ('zoom' in options && tr.zoom !== +options.zoom) {
             zoomChanged = true;
@@ -623,6 +638,11 @@ class Camera extends Evented {
         if ('pitch' in options && tr.pitch !== +options.pitch) {
             pitchChanged = true;
             tr.pitch = +options.pitch;
+        }
+
+        if ('level' in options && tr.level !== +options.level) {
+            levelChanged = true;
+            tr.level = +options.level;
         }
 
         this.fire(new Event('movestart', eventData))
@@ -644,6 +664,10 @@ class Camera extends Evented {
             this.fire(new Event('pitchstart', eventData))
                 .fire(new Event('pitch', eventData))
                 .fire(new Event('pitchend', eventData));
+        }
+
+        if (levelChanged) {
+            this.fire(new Event('level', eventData));
         }
 
         return this.fire(new Event('moveend', eventData));
@@ -689,10 +713,12 @@ class Camera extends Evented {
             startZoom = this.getZoom(),
             startBearing = this.getBearing(),
             startPitch = this.getPitch(),
+            startLevel = this.getLevel(),
 
             zoom = 'zoom' in options ? +options.zoom : startZoom,
             bearing = 'bearing' in options ? this._normalizeBearing(options.bearing, startBearing) : startBearing,
-            pitch = 'pitch' in options ? +options.pitch : startPitch;
+            pitch = 'pitch' in options ? +options.pitch : startPitch,
+            level = 'level' in options ? +options.level : startLevel;
 
         const pointAtOffset = tr.centerPoint.add(Point.convert(options.offset));
         const locationAtOffset = tr.pointLocation(pointAtOffset);
@@ -713,6 +739,7 @@ class Camera extends Evented {
         this._zooming = (zoom !== startZoom);
         this._rotating = (startBearing !== bearing);
         this._pitching = (pitch !== startPitch);
+        this._leveling = (level !== startLevel);
 
         this._prepareEase(eventData, options.noMoveStart);
 
@@ -748,6 +775,9 @@ class Camera extends Evented {
                 this._easeEndTimeoutID = setTimeout(() => this._afterEase(eventData), options.delayEndEvents);
             } else {
                 this._afterEase(eventData);
+            }
+            if (this._leveling) {
+                tr.level = level;
             }
         }, options);
 
@@ -788,10 +818,12 @@ class Camera extends Evented {
         const wasZooming = this._zooming;
         const wasRotating = this._rotating;
         const wasPitching = this._pitching;
+        const wasLeveling = this._leveling;
         this._moving = false;
         this._zooming = false;
         this._rotating = false;
         this._pitching = false;
+        this._leveling = false;
 
         if (wasZooming) {
             this.fire(new Event('zoomend', eventData));
@@ -801,6 +833,9 @@ class Camera extends Evented {
         }
         if (wasPitching) {
             this.fire(new Event('pitchend', eventData));
+        }
+        if (wasLeveling) {
+            this.fire(new Event('level', eventData));
         }
         this.fire(new Event('moveend', eventData));
     }
@@ -866,7 +901,7 @@ class Camera extends Evented {
     flyTo(options: Object, eventData?: Object) {
         // Fall through to jumpTo if user has set prefers-reduced-motion
         if (browser.prefersReducedMotion) {
-            const coercedOptions = (pick(options, ['center', 'zoom', 'bearing', 'pitch', 'around']): CameraOptions);
+            const coercedOptions = (pick(options, ['center', 'zoom', 'bearing', 'pitch', 'level', 'around']): CameraOptions);
             return this.jumpTo(coercedOptions, eventData);
         }
 
@@ -890,11 +925,13 @@ class Camera extends Evented {
         const tr = this.transform,
             startZoom = this.getZoom(),
             startBearing = this.getBearing(),
-            startPitch = this.getPitch();
+            startPitch = this.getPitch(),
+            startLevel = this.getLevel();
 
         const zoom = 'zoom' in options ? clamp(+options.zoom, tr.minZoom, tr.maxZoom) : startZoom;
         const bearing = 'bearing' in options ? this._normalizeBearing(options.bearing, startBearing) : startBearing;
         const pitch = 'pitch' in options ? +options.pitch : startPitch;
+        const level = 'level' in options ? +options.level : startLevel;
 
         const scale = tr.zoomScale(zoom - startZoom);
         const pointAtOffset = tr.centerPoint.add(Point.convert(options.offset));
@@ -985,6 +1022,7 @@ class Camera extends Evented {
         this._zooming = true;
         this._rotating = (startBearing !== bearing);
         this._pitching = (pitch !== startPitch);
+        this._leveling = (level !== startLevel);
 
         this._prepareEase(eventData, false);
 
@@ -1006,7 +1044,12 @@ class Camera extends Evented {
 
             this._fireMoveEvents(eventData);
 
-        }, () => this._afterEase(eventData), options);
+        }, () => {
+            this._afterEase(eventData);
+            if (this._leveling) {
+                tr.level = level;
+            }
+        }, options);
 
         return this;
     }

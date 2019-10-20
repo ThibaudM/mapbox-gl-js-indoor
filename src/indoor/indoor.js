@@ -15,9 +15,8 @@ class Indoor extends Evented {
 
     _map: Map;
     _source: Source;
-    selectedLevel: ?number;
-    minLevel: number;
-    maxLevel: number;
+    _minLevel: number;
+    _maxLevel: number;
     indoorFilters: Object;
     _timestampLoadLevels: number;
     _currentTimeout: boolean;
@@ -26,48 +25,72 @@ class Indoor extends Evented {
         super();
 
         this._map = map;
-        this.initialize();
+        this.reset();
+
+        this._map.on('level', () => this._onLevelChanged(map.getLevel()));
 
         bindAll([
             '_onSourceDataChanged',
+            '_onLevelChanged',
+            'tryToLoadLevels',
             'loadLevels'
         ], this);
     }
 
-    initialize() {
-        this.selectedLevel = undefined;
-        this.minLevel = 0;
-        this.maxLevel = 0;
+    reset() {
+        this._minLevel = Number.MAX_SAFE_INTEGER;
+        this._maxLevel = Number.MIN_SAFE_INTEGER;
         this.indoorFilters = {};
         this._timestampLoadLevels = 0;
         this._currentTimeout = false;
     }
 
+    /**
+     * ***********************
+     * Handle level change
+     * ***********************
+     */
+
+    _onLevelChanged(newLevel) {
+        Object.keys(this.indoorFilters)
+            .forEach(layerId => {
+                const filter = this.indoorFilters[layerId];
+                this._map.setFilter(layerId, newLevel === null ? filter : ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], newLevel]]]);
+            });
+    }
+
+    /**
+     * **************
+     * Layer creation
+     * **************
+     */
+
     createIndoorLayer(source: SourceSpecification, styleUrl: string, imagesUrl: any) {
 
         if (this._map.getSource('indoor')) {
-            this._map.removeIndoorLayer();
+            this.removeIndoorLayer();
         }
 
-        this.initialize();
+        this.reset();
 
         Promise.resolve()
             // Load Source
             .then(() => {
+                return new Promise(resolve => {
+                    this._source = this._map.addSource(SOURCE_ID, {
+                        type: "geojson",
+                        data: source
+                    });
+                    this._source.on('data', this._onSourceDataChanged);
 
-                this._source = this._map.addSource(SOURCE_ID, {
-                    type: "geojson",
-                    data: source
+                    this._source.on('data', data => {
+                        if (data.dataType === "source" &&
+                            data.sourceDataType === "metadata") {
+                            this._source.off('data', this);
+                            resolve();
+                        }
+                    });
                 });
-
-                this._source.on('data', data => {
-                    if (data.dataType === "source" &&
-                        data.sourceDataType === "metadata") {
-                        this._source.off('data', this);
-                        Promise.resolve();
-                    }
-                });
-
             })
 
             // Load Layers from JSON style file
@@ -107,7 +130,6 @@ class Indoor extends Evented {
                         this._map.addLayer(layer);
                         saveFilter(layer);
                     }
-
                 }
             })
 
@@ -123,8 +145,15 @@ class Indoor extends Evented {
             .then(() => {
                 this._source.on('data', this._onSourceDataChanged);
 
-                // We need to load levels at least once if user wants to call setLevel() after loaded event.
-                this.loadLevels();
+                this.on('level.range.changed', range => {
+                    if (this._map.getLevel() !== null) {
+                        this._onLevelChanged(this._map.getLevel());
+                    } else {
+                        const defaultLevel = Math.max(Math.min(0, range.maxLevel), range.minLevel);
+                        this._map.setLevel(defaultLevel);
+                    }
+                    this.off('level.range.changed', this);
+                });
 
                 this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
             })
@@ -162,10 +191,6 @@ class Indoor extends Evented {
         // });
     }
 
-    _onSourceDataChanged() {
-        this.tryToLoadLevels();
-    }
-
     createPoiLayers(metaLayer) {
 
         const newLayers = [];
@@ -182,20 +207,7 @@ class Indoor extends Evented {
         return newLayers;
     }
 
-    tryToLoadLevels() {
-        if (new Date().getTime() - this._timestampLoadLevels > MIN_TIME_BETWEEN_LOADING_LEVELS) {
-            this.loadLevels();
-        } else if (!this._currentTimeout) {
-            setTimeout(() => {
-                this.loadLevels();
-                this._currentTimeout = false;
-            }, MIN_TIME_BETWEEN_LOADING_LEVELS);
-            this._currentTimeout = true;
-        }
-    }
-
     removeIndoorLayer() {
-
         this._source.off('data', this._onSourceDataChanged);
 
         this._map.getStyle().layers.forEach(layer => {
@@ -206,72 +218,82 @@ class Indoor extends Evented {
         this._map.removeSource(SOURCE_ID);
     }
 
-    loadLevels() {
+    /**
+     * ***********************
+     * Check for level changes
+     * ***********************
+     */
 
+    _onSourceDataChanged() {
+        this.tryToLoadLevels();
+    }
+
+    tryToLoadLevels() {
+        // If promise for loadLevels exists, returns it
+        if (this.loadLevelsPromise) {
+            return this.loadLevelsPromise;
+        }
+
+        // If diff time since last check of "loadLevels" is higher than MIN_TIME_BETWEEN_LOADING_LEVELS, loadLevels can be call directly
+        if (new Date().getTime() - this._timestampLoadLevels > MIN_TIME_BETWEEN_LOADING_LEVELS) {
+            this.loadLevels();
+            return Promise.resolve();
+        }
+
+        // Otherwise create the promise with the timeout
+        this.loadLevelsPromise = new Promise(resolve => {
+            setTimeout(() => {
+                this.loadLevels();
+                resolve();
+                this.loadLevelsPromise = null;
+            }, MIN_TIME_BETWEEN_LOADING_LEVELS);
+        });
+    }
+
+    /**
+     * Go through level tags to know building levels range
+     */
+    loadLevels() {
         this._timestampLoadLevels = new Date().getTime();
 
-        let maxLevel = 0;
-        let minLevel = 0;
+        let maxLevel = Number.MIN_SAFE_INTEGER;
+        let minLevel = Number.MAX_SAFE_INTEGER;
 
         const features = this._map.querySourceFeatures(SOURCE_ID, {filter: ["has", "level"]});
 
         for (let i = 0; i < features.length; i++) {
-
             const propertyLevel = features[i].properties.level;
-            if (isNaN(propertyLevel)) {
-                const m = RegExp("(-?\\d+);(-?\\d+)", "g").exec(features[i].properties.level);
-                if (m == null || m.length !== 3) continue;
-                const min = parseInt(m[1]);
-                const max = parseInt(m[2]);
-                if (minLevel > min) minLevel = min;
-                if (maxLevel < max) maxLevel = max;
+            const splitLevel = propertyLevel.split(';');
+            if (splitLevel.length === 1) {
+                const level = parseFloat(propertyLevel);
+                if (!isNaN(level)) {
+                    minLevel = Math.min(minLevel, level);
+                    maxLevel = Math.max(maxLevel, level);
+                }
+            } else if (splitLevel.length === 2) {
+                const level1 = parseFloat(splitLevel[0]);
+                const level2 = parseFloat(splitLevel[1]);
+                if (!isNaN(level1) && !isNaN(level2)) {
+                    minLevel = Math.min(minLevel, Math.min(level1, level2));
+                    maxLevel = Math.max(maxLevel, Math.max(level1, level2));
+                }
             }
-
-            if (minLevel > propertyLevel) minLevel = parseInt(propertyLevel);
-            if (maxLevel < propertyLevel) maxLevel = parseInt(propertyLevel);
         }
 
-        if (this.minLevel === minLevel && this.maxLevel === maxLevel)
+        // If the new minLevel and the new maxLevel are equals to old ones, you don't need to notify modifications
+        if (this._minLevel === minLevel && this._maxLevel === maxLevel) {
             return;
+        }
 
-        this.minLevel = minLevel;
-        this.maxLevel = maxLevel;
-
-        if (minLevel === 0 && maxLevel === 0) {
-            this.fire(new Event('building.removed'));
+        if (minLevel > maxLevel) {
+            this.fire(new Event('level.range.changed', null));
+            this._map.setLevel(null);
         } else {
-            this.fire(new Event('building.added', {minLevel, maxLevel}));
+            this.fire(new Event('level.range.changed', {minLevel, maxLevel}));
         }
 
-        // First time try to set current level to 0
-        if (this.selectedLevel === undefined && (minLevel !== 0 || maxLevel !== 0)) {
-            this.setLevel(Math.max(this.minLevel, 0));
-        }
-
-        if (minLevel !== 0 || maxLevel !== 0) {
-            if (this.selectedLevel > this.maxLevel) {
-                this.setLevel(this.maxLevel);
-            } else if (this.selectedLevel < this.minLevel) {
-                this.setLevel(this.minLevel);
-            }
-        }
-    }
-
-    setLevel(level) {
-
-        if (this.selectedLevel === level) {
-            return;
-        }
-        this.selectedLevel = level;
-
-        Object.keys(this.indoorFilters)
-            .forEach(layerId => {
-                const filter = this.indoorFilters[layerId];
-                this._map.setFilter(layerId, ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], level]]]);
-
-            });
-
-        this.fire(new Event('level.changed', {level}));
+        this._minLevel = minLevel;
+        this._maxLevel = maxLevel;
     }
 }
 

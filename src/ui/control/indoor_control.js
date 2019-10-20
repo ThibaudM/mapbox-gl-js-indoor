@@ -1,8 +1,9 @@
 // @flow
 
-import {bindAll} from '../../util/util';
+import { bindAll } from '../../util/util';
 import DOM from '../../util/dom';
 import type Indoor from '../indoor/indoor';
+import type Map from '../map';
 
 const className = 'mapboxgl-ctrl';
 
@@ -12,6 +13,7 @@ const className = 'mapboxgl-ctrl';
  * @implements {IControl}
  */
 class IndoorControl {
+    _map: Map;
     _indoor: Indoor;
     _container: HTMLElement;
     _levelsButtons: Array<number, HTMLElement>;
@@ -22,14 +24,16 @@ class IndoorControl {
         this._selectedButton = null;
 
         bindAll([
-            '_setSelected',
-            'loadNavigationBar',
-            'removeNavigationBar'
+            '_onLevelChanged',
+            '_onLevelRangeChanged'
         ], this);
+
+        this._onLevelChanged.bind(this);
+        this._onLevelRangeChanged.bind(this);
     }
 
     onAdd(map) {
-
+        this._map = map;
         this._indoor = map._indoor;
 
         // Create container
@@ -38,66 +42,79 @@ class IndoorControl {
         this._el = map.getCanvasContainer();
 
         // If indoor layer is already loaded, update levels
-        if (this._indoor.selectedLevel !== undefined) {
-            this._setSelected(map._indoor.selectedLevel);
+        if (map.getLevel() !== null) {
+            this._setSelected(map.getLevel());
         }
 
         // Register to indoor events
-        this._indoor.on('building.added', (data) => { this.loadNavigationBar(data); });
-        this._indoor.on('building.removed', () => { this.removeNavigationBar(); });
-        this._indoor.on('level.changed', (e) => {
-            this._setSelected(e.level);
-        });
+        this._indoor.on('level.range.changed', this._onLevelRangeChanged);
+        this._map.on('level', this._onLevelChanged);
 
         return this._container;
     }
 
     onRemove() {
-
+        this._indoor.off('level.range.changed', this._onLevelRangeChanged);
+        this._map.off('level', this._onLevelChanged);
     }
 
-    loadNavigationBar(data) {
+    _onLevelRangeChanged(range) {
+        if (range === null) {
+            this._removeNavigationBar();
+        } else {
+            this._loadNavigationBar(range);
+        }
+    }
+
+    _onLevelChanged() {
+        const level = this._map.getLevel();
+        if (level !== null) {
+            this._setSelected(level);
+        }
+    }
+
+    _loadNavigationBar(range) {
 
         this._container.style.visibility = 'visible';
 
+        this._levelsButtons = {};
         while (this._container.firstChild) {
             this._container.removeChild(this._container.firstChild);
         }
 
-        for (let i = data.minLevel; i <= data.maxLevel; i++) {
+        for (let i = range.minLevel; i <= range.maxLevel; i++) {
             this._levelsButtons[i] = this._createLevelButton(i);
         }
 
-        // if(this._selectedButton == null) {
-        if (this._indoor.selectedLevel !== undefined) {
-            this._setSelected(this._indoor.selectedLevel);
-        } else {
-            this._setSelected(0);
+        if (this._map.getLevel() !== null) {
+            this._setSelected(this._map.getLevel());
         }
-        // }
     }
 
-    removeNavigationBar() {
+    _removeNavigationBar() {
         this._container.style.visibility = 'hidden';
-        // this._selectedButton = null;
     }
 
     _setSelected(level) {
+        if (Object.keys(this._levelsButtons).length === 0) {
+            return;
+        }
 
-        if (this._selectedButton != null) {
+        if (this._selectedButton !== null) {
             this._selectedButton.style.fontWeight = "normal";
         }
-        this._levelsButtons[level].style.fontWeight = "bold";
-        this._selectedButton = this._levelsButtons[level];
-
+        if (this._levelsButtons[level]) {
+            this._levelsButtons[level].style.fontWeight = "bold";
+            this._selectedButton = this._levelsButtons[level];
+        }
     }
 
     _createLevelButton(level) {
         const a = DOM.create('button', `${className}-icon`, this._container);
         a.innerHTML = level.toString();
         a.addEventListener('click', () => {
-            if (this._indoor._selectedLevel === level) return;
-            this._indoor.setLevel(level);
+            if (this._map.getLevel() === level) return;
+            this._map.setLevel(level);
         });
         return a;
     }
