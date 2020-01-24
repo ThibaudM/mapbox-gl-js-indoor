@@ -27,6 +27,7 @@ import {MapMouseEvent} from './events';
 import TaskQueue from '../util/task_queue';
 import webpSupported from '../util/webp_supported';
 import {setCacheLimits} from '../util/tile_request_cache';
+import Indoor from '../indoor/indoor';
 
 import type {PointLike} from '@mapbox/point-geometry';
 import type {RequestTransformFunction} from '../util/mapbox';
@@ -296,6 +297,7 @@ class Map extends Camera {
     _localIdeographFontFamily: string;
     _requestManager: RequestManager;
     _locale: Object;
+    _indoor: Indoor;
 
     /**
      * The map's {@link ScrollZoomHandler}, which implements zooming in and out with a scroll wheel or trackpad.
@@ -378,6 +380,7 @@ class Map extends Camera {
         this._controls = [];
         this._mapId = uniqueId();
         this._locale = extend({}, defaultLocale, options.locale);
+        this._indoor = new Indoor(this);
 
         this._requestManager = new RequestManager(options.transformRequest, options.accessToken);
 
@@ -458,7 +461,7 @@ class Map extends Camera {
         });
         this.on('dataloading', (event: MapDataEvent) => {
             this.fire(new Event(`${event.dataType}dataloading`, event));
-        });
+        });        
     }
 
     /*
@@ -2250,6 +2253,23 @@ class Map extends Camera {
         if (this._trackResize) {
             this.resize({originalEvent: event})._update();
         }
+    }
+
+
+    createIndoorLayer(source:SourceSpecification, styleUrl:string) {
+
+        if (this.loaded()) {
+            this._indoor.createIndoorLayer(source, styleUrl);
+            return;
+        }
+
+        this.on('load', function () {
+            this._indoor.createIndoorLayer(source, styleUrl);
+        });
+    }
+
+    removeIndoorLayer() {
+        this._indoor.removeIndoorLayer();
     }
 
     /**

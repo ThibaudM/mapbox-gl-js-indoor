@@ -553,6 +553,29 @@ CompoundExpression.register(expressions, {
         StringType,
         [CollatorType],
         (ctx, [collator]) => collator.evaluate(ctx).resolvedLocale()
+    ],
+    'inrange': [
+        BooleanType,
+        [StringType, NumberType],
+        (ctx, [r, s]) => {
+
+
+            const range = r.evaluate(ctx);
+            const value = s.evaluate(ctx);
+
+            // First, check if it is an integer
+            if (!isNaN(range)) return parseInt(range) == value;
+
+            // Otherwise, use the regex
+            const m = RegExp("(-?\\d+);(-?\\d+)", "g").exec(range);
+
+            if (m == null) return false;
+            if (m.length !== 3) return false;
+            
+            const min = parseInt(m[1]);
+            const max = parseInt(m[2]);
+            return value >= min && value <= max;
+        }
     ]
 });
 

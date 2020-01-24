@@ -39,6 +39,7 @@ class Hash {
         this._map = map;
         window.addEventListener('hashchange', this._onHashChange, false);
         this._map.on('moveend', this._updateHash);
+        this._map._indoor.on('level.range.changed', this._updateHash);
         return this;
     }
 
@@ -50,6 +51,7 @@ class Hash {
     remove() {
         window.removeEventListener('hashchange', this._onHashChange, false);
         this._map.off('moveend', this._updateHash);
+        this._map._indoor.off('level.range.changed', this._updateHash);
         clearTimeout(this._updateHash());
 
         delete this._map;
@@ -58,6 +60,7 @@ class Hash {
 
     getHashString(mapFeedback?: boolean) {
         const center = this._map.getCenter(),
+            level = this._map.getLevel(),
             zoom = Math.round(this._map.getZoom() * 100) / 100,
             // derived from equation: 512px * 2^z / 360 / 10^d < 0.5px
             precision = Math.ceil((zoom * Math.LN2 + Math.log(512 / 360 / 0.5)) / Math.LN10),
@@ -75,6 +78,7 @@ class Hash {
             hash += `${zoom}/${lat}/${lng}`;
         }
 
+        if (!isNaN(level) || bearing || pitch) hash += (`/${level}`);
         if (bearing || pitch) hash += (`/${Math.round(bearing * 10) / 10}`);
         if (pitch) hash += (`/${Math.round(pitch)}`);
 
@@ -122,8 +126,9 @@ class Hash {
             this._map.jumpTo({
                 center: [+loc[2], +loc[1]],
                 zoom: +loc[0],
-                bearing: +(loc[3] || 0),
-                pitch: +(loc[4] || 0)
+                bearing: +(loc[4] || 0),
+                pitch: +(loc[5] || 0),
+                level: +(loc[3] || 0)
             });
             return true;
         }

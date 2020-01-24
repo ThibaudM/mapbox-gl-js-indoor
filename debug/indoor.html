@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Mapbox GL JS debug page</title>
+    <meta charset='utf-8'>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel='stylesheet' href='../dist/mapbox-gl.css' />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+        }
+
+        html,
+        body,
+        #map {
+            height: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id='map'></div>
+
+    <script src='../dist/mapbox-gl-dev.js'></script>
+    <script src='osmtogeojson.js'></script>
+    <script src='access_token_generated.js'></script>
+    <script>
+
+        var map = window.map = new mapboxgl.Map({
+            container: 'map',
+            zoom: 18,
+            center: [2.3743773, 48.8443038],
+            style: 'mapbox://styles/mapbox/streets-v10',
+            hash: true
+        });
+
+        map.on('load', function () {
+
+            // map.createIndoorLayer('inria.geojson', 'indoor-style.json');
+            // map.createIndoorLayer('gare-de-lyon.geojson', 'indoor-style.json');
+
+
+        });
+
+        map._indoor.on('loaded', function () {
+            // map.setIndoorLevel(1);
+        });
+
+        map.addControl(new mapboxgl.IndoorControl());
+        map.addControl(new mapboxgl.GeolocateControl({
+            positionOptions: {
+                enableHighAccuracy: true
+            },
+            trackUserLocation: true
+        }));
+
+        let xml;
+        function loadGeoJson(param) {
+
+            const zoom = map.getZoom();
+            if (zoom < 18) {
+                console.error('Area is too large');
+                return;
+            }
+
+            const bounds = map.getBounds();
+            const request = 'https://www.overpass-api.de/api/interpreter?data=[out:xml][timeout:25][bbox:' + bounds.getSouth() + ',' + bounds.getWest() + ',' + bounds.getNorth() + ',' + bounds.getEast() + '];(way["indoor"]["indoor"!="yes"];relation["indoor"]["indoor"!="yes"];way["buildingpart"~"room|verticalpassage|corridor"];relation["buildingpart"~"room|verticalpassage|corridor"];node[~"amenity|shop|railway|highway|door|entrance"~"."];way[~"amenity|shop|railway|highway|building:levels"~"."];relation[~"amenity|shop|railway|highway|building:levels"~"."];);out body;>;out skel qt;';
+            // let request;
+            // if(param ===1) {
+            //     request = 'https://gist.githubusercontent.com/ThibaudM/8d75f7b14eb027d420e4af1a125eaf4b/raw/0a1069fe7c261cae664783bce23397cb92283acf/interpreter%2520(11)';
+            // } else {
+            //     request = 'https://gist.githubusercontent.com/ThibaudM/3288dd055f01757d32ffb4f7fd3d7777/raw/55af77e5926f60e0cb7a18a36448af73f6522972/interpreter%2520(12)';
+            // }
+
+            fetch(request)
+                .then(response => {
+                    if (response.status !== 200) {
+                        throw new Error('Request problem: ' + statusText);
+                    }
+                    return response.text();
+                })
+                .then(str => (new window.DOMParser()).parseFromString(str, "text/xml"))
+                .then(_xml => {
+                    xml = _xml;
+                    const geojson = osmtogeojson(xml, { flatProperties: true });
+                    map.createIndoorLayer(geojson, 'indoor-style.json');
+                }
+                );
+        }
+
+       
+
+    </script>
+</body>
+
+</html>

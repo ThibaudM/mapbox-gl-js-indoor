@@ -10,6 +10,7 @@ import GeolocateControl from './ui/control/geolocate_control';
 import AttributionControl from './ui/control/attribution_control';
 import ScaleControl from './ui/control/scale_control';
 import FullscreenControl from './ui/control/fullscreen_control';
+import IndoorControl from './ui/control/indoor_control';
 import Popup from './ui/popup';
 import Marker from './ui/marker';
 import Style from './style/style';
@@ -36,6 +37,7 @@ const exported = {
     AttributionControl,
     ScaleControl,
     FullscreenControl,
+    IndoorControl,
     Popup,
     Marker,
     Style,
