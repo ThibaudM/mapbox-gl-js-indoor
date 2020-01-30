@@ -73,7 +73,7 @@ class Transform {
         this.angle = 0;
         this._fov = 0.6435011087932844;
         this._pitch = 0;
-        this._level = 0;
+        this._level = null;
         this._unmodified = true;
         this._posMatrixCache = {};
         this._alignedPosMatrixCache = {};
@@ -173,10 +173,10 @@ class Transform {
         this._calcMatrices();
     }
 
-    get level(): number {
+    get level(): ?number {
         return this._level;
     }
-    set level(level: number) {
+    set level(level: ?number) {
         this._level = level;
     }
 

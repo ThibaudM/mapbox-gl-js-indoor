@@ -39,7 +39,7 @@ class Hash {
         this._map = map;
         window.addEventListener('hashchange', this._onHashChange, false);
         this._map.on('moveend', this._updateHash);
-        this._map._indoor.on('level.range.changed', this._updateHash);
+        this._map.on('level', this._updateHash);
         return this;
     }
 
@@ -51,7 +51,7 @@ class Hash {
     remove() {
         window.removeEventListener('hashchange', this._onHashChange, false);
         this._map.off('moveend', this._updateHash);
-        this._map._indoor.off('level.range.changed', this._updateHash);
+        this._map.off('level', this._updateHash);
         clearTimeout(this._updateHash());
 
         delete this._map;
@@ -78,7 +78,7 @@ class Hash {
             hash += `${zoom}/${lat}/${lng}`;
         }
 
-        if (!isNaN(level) || bearing || pitch) hash += (`/${level}`);
+        if (level !== null || bearing || pitch) hash += (`/${level === null ? '' : level}`);
         if (bearing || pitch) hash += (`/${Math.round(bearing * 10) / 10}`);
         if (pitch) hash += (`/${Math.round(pitch)}`);
 
@@ -128,7 +128,7 @@ class Hash {
                 zoom: +loc[0],
                 bearing: +(loc[4] || 0),
                 pitch: +(loc[5] || 0),
-                level: +(loc[3] || 0)
+                level: loc[3] !== '' ? parseFloat(loc[3]) : null
             });
             return true;
         }

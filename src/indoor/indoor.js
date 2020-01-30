@@ -96,6 +96,7 @@ class Indoor extends Evented {
             LAYERS_TO_REMOVE.forEach(layerId => {
                 this._map.setLayoutProperty(layerId, 'visibility', 'visible');
             });
+            this._map.setLevel(null);
             this.fire(new Event('level.range.changed', null));
             return;
         }
@@ -158,24 +159,18 @@ class Indoor extends Evented {
             // End of creation
             .then(() => {
 
-                this.on('level.range.changed', range => {
-                    if (this._map.getLevel() !== null) {
-                        this._onLevelChanged(this._map.getLevel());
-                    } else {
-                        const defaultLevel = Math.max(Math.min(0, range.maxLevel), range.minLevel);
-                        this._map.setLevel(defaultLevel);
-                    }
-                    this.off('level.range.changed', this);
-                });
+                const rangeEvent = { minLevel: levelsRange[0], maxLevel: levelsRange[1] };
+                this.fire(new Event('level.range.changed', rangeEvent));
 
-            })
+                if (this._map.getLevel() !== null) {
+                    this._onLevelChanged(this._map.getLevel());
+                } else {
+                    const defaultLevel = Math.max(Math.min(0, rangeEvent.maxLevel), rangeEvent.minLevel);
+                    this._map.setLevel(defaultLevel);
+                }
 
-            .then(() => {
-                this.fire(new Event('level.range.changed', { minLevel: levelsRange[0], maxLevel: levelsRange[1] }));
-            })
-
-            .then(() => {
                 this.fire(new Event('loaded', { sourceId: SOURCE_ID }));
+
             })
 
             // Catch errors
@@ -241,8 +236,8 @@ class Indoor extends Evented {
     updateSelectedMapIfNeeded() {
         const closestMap = this.closestMap();
         if (closestMap !== this._selectedMap) {
-            this.updateSelectedMap(closestMap);
             this._selectedMap = closestMap;
+            this.updateSelectedMap(closestMap);
         }
     }
 
