@@ -35,14 +35,26 @@ var map = window.map = new mapboxgl.Map({
 });
 
 map.on('load', function() {
-
-    map.createIndoorLayer('inria.geojson', 'indoor-style.json');
-
+    loadMaps(map, [
+        'inria.geojson'
+    ], 'indoor-style.json');
 });
 
-map._indoor.on('loaded', function() {
-    map.setIndoorLevel(1);
-});
+let lastGeojson;
+function loadMaps(map, mapsPaths, layersPath) {
+    fetch(layersPath)
+        .then(res => res.json())
+        .then(layers => {
+            mapsPaths.forEach(mapPath => {
+                fetch(mapPath)
+                    .then(res => res.json())
+                    .then(geojson => {
+                        map.addIndoorMap(geojson, layers);
+                        lastGeojson = geojson;
+                    });
+            });
+        });
+}
 
 map.addControl(new mapboxgl.IndoorControl());
 map.addControl(new mapboxgl.GeolocateControl({

@@ -1,15 +1,16 @@
 // @flow
 
-import {Event, ErrorEvent, Evented} from '../util/evented';
-import {getJSON} from '../util/ajax';
+import { Event, ErrorEvent, Evented } from '../util/evented';
 import GeoJsonHelper from './geojson_helper';
-import {bindAll} from '../util/util';
+import { bindAll } from '../util/util';
+import MercatorCoordinate from '../../src/geo/mercator_coordinate';
 
 // import type Map from '../ui/map';
 import type StyleLayer from './style_layer';
 
-const MIN_TIME_BETWEEN_LOADING_LEVELS = 500; // in ms
 const SOURCE_ID = "indoor";
+
+const LAYERS_TO_REMOVE = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scalerank3', 'road-label-small'];
 
 class Indoor extends Evented {
 
@@ -20,29 +21,39 @@ class Indoor extends Evented {
     indoorFilters: Object;
     _timestampLoadLevels: number;
     _currentTimeout: boolean;
+    _indoorMaps: Array;
 
     constructor(map: Map) {
         super();
 
         this._map = map;
-        this.reset();
+        this._indoorMaps = [];
+        this._selectedMap = null;
 
         this._map.on('level', () => this._onLevelChanged(map.getLevel()));
 
+        this._map.on('load', () => {
+            this.updateSelectedMapIfNeeded();
+            this._map.on('moveend', () => this.updateSelectedMapIfNeeded());
+        });
+
         bindAll([
-            '_onSourceDataChanged',
-            '_onLevelChanged',
-            'tryToLoadLevels',
-            'loadLevels'
+            '_onLevelChanged'
         ], this);
     }
 
-    reset() {
-        this._minLevel = Number.MAX_SAFE_INTEGER;
-        this._maxLevel = Number.MIN_SAFE_INTEGER;
-        this.indoorFilters = {};
-        this._timestampLoadLevels = 0;
-        this._currentTimeout = false;
+    addMap(geojson: GeoJSONSourceSpecification, layers: Array<LayerSpecification>, imagesUrl: any) {
+
+        const { bounds, levelsRange } = GeoJsonHelper.extractLevelsRangeAndBounds(geojson);
+
+        this._indoorMaps.push({
+            bounds,
+            geojson,
+            layers,
+            levelsRange
+        });
+
+        this.updateSelectedMapIfNeeded();
     }
 
     /**
@@ -52,6 +63,9 @@ class Indoor extends Evented {
      */
 
     _onLevelChanged(newLevel) {
+        if (!this.indoorFilters) {
+            return;
+        }
         Object.keys(this.indoorFilters)
             .forEach(layerId => {
                 const filter = this.indoorFilters[layerId];
@@ -65,23 +79,38 @@ class Indoor extends Evented {
      * **************
      */
 
-    createIndoorLayer(source: SourceSpecification, styleUrl: string, imagesUrl: any) {
+    updateSelectedMap(indoorMap) {
 
-        if (this._map.getSource('indoor')) {
-            this.removeIndoorLayer();
+        if (this._map.getSource(SOURCE_ID)) {
+            this._map.getStyle().layers.forEach(layer => {
+                if (layer.source === SOURCE_ID) {
+                    this._map.removeLayer(layer.id);
+                }
+            });
+            this._map.removeSource(SOURCE_ID);
         }
 
-        this.reset();
+        this.indoorFilters = {};
+
+        if (!indoorMap) {
+            LAYERS_TO_REMOVE.forEach(layerId => {
+                this._map.setLayoutProperty(layerId, 'visibility', 'visible');
+            });
+            this.fire(new Event('level.range.changed', null));
+            return;
+        }
+
+        const { geojson, layers, levelsRange } = indoorMap;
 
         Promise.resolve()
             // Load Source
             .then(() => {
                 return new Promise(resolve => {
+
                     this._source = this._map.addSource(SOURCE_ID, {
                         type: "geojson",
-                        data: source
+                        data: geojson
                     });
-                    this._source.on('data', this._onSourceDataChanged);
 
                     this._source.on('data', data => {
                         if (data.dataType === "source" &&
@@ -93,22 +122,8 @@ class Indoor extends Evented {
                 });
             })
 
-            // Load Layers from JSON style file
-            .then(() => {
-                const request = this._map._requestManager.transformRequest(styleUrl);
-                return new Promise((resolve, reject) => {
-                    getJSON(request, (error, json) => {
-                        if (error) {
-                            reject(error);
-                            return;
-                        }
-                        resolve(json);
-                    });
-                });
-            })
-
             // Add layers and save filters
-            .then((json) => {
+            .then(() => {
                 const saveFilter = layer => {
                     // Fill indoorFilters with existing filters
                     let currentFilter = this._map.getFilter(layer.id);
@@ -118,8 +133,8 @@ class Indoor extends Evented {
                     this.indoorFilters[layer.id] = currentFilter;
                 };
 
-                for (let i = 0; i < json.length; i++) {
-                    const layer = json[i];
+                for (let i = 0; i < layers.length; i++) {
+                    const layer = layers[i];
 
                     if (layer.id === "poi-indoor") {
                         this.createPoiLayers(layer).forEach(layer => {
@@ -135,15 +150,13 @@ class Indoor extends Evented {
 
             // Remove some layers for rendering
             .then(() => {
-                const layersToRemove = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scalerank3', 'road-label-small'];
-                layersToRemove.forEach(layerId => {
+                LAYERS_TO_REMOVE.forEach(layerId => {
                     this._map.setLayoutProperty(layerId, 'visibility', 'none');
                 });
             })
 
             // End of creation
             .then(() => {
-                this._source.on('data', this._onSourceDataChanged);
 
                 this.on('level.range.changed', range => {
                     if (this._map.getLevel() !== null) {
@@ -155,12 +168,19 @@ class Indoor extends Evented {
                     this.off('level.range.changed', this);
                 });
 
-                this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
+            })
+
+            .then(() => {
+                this.fire(new Event('level.range.changed', { minLevel: levelsRange[0], maxLevel: levelsRange[1] }));
+            })
+
+            .then(() => {
+                this.fire(new Event('loaded', { sourceId: SOURCE_ID }));
             })
 
             // Catch errors
             .catch(error => {
-                this.fire(new ErrorEvent('error', {error}));
+                this.fire(new ErrorEvent('error', { error }));
             });
 
         // // Load images
@@ -207,15 +227,9 @@ class Indoor extends Evented {
         return newLayers;
     }
 
-    removeIndoorLayer() {
-        this._source.off('data', this._onSourceDataChanged);
-
-        this._map.getStyle().layers.forEach(layer => {
-            if (layer.source === SOURCE_ID) {
-                this._map.removeLayer(layer.id);
-            }
-        });
-        this._map.removeSource(SOURCE_ID);
+    removeMap(geojson) {
+        this._indoorMaps = this._indoorMaps.filter(indoorMap => indoorMap.geojson !== geojson);
+        this.updateSelectedMapIfNeeded();
     }
 
     /**
@@ -224,76 +238,60 @@ class Indoor extends Evented {
      * ***********************
      */
 
-    _onSourceDataChanged() {
-        this.tryToLoadLevels();
+    updateSelectedMapIfNeeded() {
+        const closestMap = this.closestMap();
+        if (closestMap !== this._selectedMap) {
+            this.updateSelectedMap(closestMap);
+            this._selectedMap = closestMap;
+        }
     }
 
-    tryToLoadLevels() {
-        // If promise for loadLevels exists, returns it
-        if (this.loadLevelsPromise) {
-            return this.loadLevelsPromise;
+    closestMap() {
+
+        if (this._map.getZoom() < 17) {
+            return null;
         }
 
-        // If diff time since last check of "loadLevels" is higher than MIN_TIME_BETWEEN_LOADING_LEVELS, loadLevels can be call directly
-        if (new Date().getTime() - this._timestampLoadLevels > MIN_TIME_BETWEEN_LOADING_LEVELS) {
-            this.loadLevels();
-            return Promise.resolve();
-        }
+        const cameraBounds = this._map.getBounds();
 
-        // Otherwise create the promise with the timeout
-        this.loadLevelsPromise = new Promise(resolve => {
-            setTimeout(() => {
-                this.loadLevels();
-                resolve();
-                this.loadLevelsPromise = null;
-            }, MIN_TIME_BETWEEN_LOADING_LEVELS);
-        });
-    }
-
-    /**
-     * Go through level tags to know building levels range
-     */
-    loadLevels() {
-        this._timestampLoadLevels = new Date().getTime();
-
-        let maxLevel = Number.MIN_SAFE_INTEGER;
-        let minLevel = Number.MAX_SAFE_INTEGER;
-
-        const features = this._map.querySourceFeatures(SOURCE_ID, {filter: ["has", "level"]});
-
-        for (let i = 0; i < features.length; i++) {
-            const propertyLevel = features[i].properties.level;
-            const splitLevel = propertyLevel.split(';');
-            if (splitLevel.length === 1) {
-                const level = parseFloat(propertyLevel);
-                if (!isNaN(level)) {
-                    minLevel = Math.min(minLevel, level);
-                    maxLevel = Math.max(maxLevel, level);
-                }
-            } else if (splitLevel.length === 2) {
-                const level1 = parseFloat(splitLevel[0]);
-                const level2 = parseFloat(splitLevel[1]);
-                if (!isNaN(level1) && !isNaN(level2)) {
-                    minLevel = Math.min(minLevel, Math.min(level1, level2));
-                    maxLevel = Math.max(maxLevel, Math.max(level1, level2));
-                }
+        const overlap = (bounds1, bounds2) => {
+            // If one rectangle is on left side of other
+            if (bounds1.getWest() > bounds2.getEast() || bounds2.getWest() > bounds1.getEast()) {
+                return false;
             }
+
+            // If one rectangle is above other
+            if (bounds1.getNorth() < bounds2.getSouth() || bounds2.getNorth() < bounds1.getSouth()) {
+                return false;
+            }
+
+            return true;
+        };
+
+        const mapsInBounds = this._indoorMaps.filter(indoorMap =>
+            overlap(indoorMap.bounds, cameraBounds)
+        );
+
+        if (mapsInBounds.length === 0) {
+            return null;
         }
 
-        // If the new minLevel and the new maxLevel are equals to old ones, you don't need to notify modifications
-        if (this._minLevel === minLevel && this._maxLevel === maxLevel) {
-            return;
+        if (mapsInBounds.length === 1) {
+            return mapsInBounds[0];
         }
 
-        if (minLevel > maxLevel) {
-            this.fire(new Event('level.range.changed', null));
-            this._map.setLevel(null);
-        } else {
-            this.fire(new Event('level.range.changed', {minLevel, maxLevel}));
-        }
+        const dist = (p1, p2) => {
+            const { x1, y1 } = MercatorCoordinate.fromLngLat(p1);
+            const { x2, y2 } = MercatorCoordinate.fromLngLat(p2);
+            return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+        };
 
-        this._minLevel = minLevel;
-        this._maxLevel = maxLevel;
+        // TODO Verify
+        return mapsInBounds[
+            mapsInBounds
+                .map(map => dist(map.bounds.getCenter(), cameraBounds.getCenter()))
+                .reduce((iMin, x, i, arr) => x < arr[iMin] ? i : iMin, Infinity)
+        ];
     }
 }
 

@@ -2255,21 +2255,12 @@ class Map extends Camera {
         }
     }
 
-
-    createIndoorLayer(source:SourceSpecification, styleUrl:string) {
-
-        if (this.loaded()) {
-            this._indoor.createIndoorLayer(source, styleUrl);
-            return;
-        }
-
-        this.on('load', function () {
-            this._indoor.createIndoorLayer(source, styleUrl);
-        });
+    addIndoorMap(geojson:GeoJSONSourceSpecification, layers:Array<LayerSpecification>) {
+        this._indoor.addMap(geojson, layers);
     }
 
-    removeIndoorLayer() {
-        this._indoor.removeIndoorLayer();
+    removeIndoorMap(geojson:GeoJSONSourceSpecification) {
+        this._indoor.removeMap(geojson);
     }
 
     /**
