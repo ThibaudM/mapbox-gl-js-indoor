@@ -467,7 +467,7 @@ class Map extends Camera {
         });
         this.on('dataloading', (event: MapDataEvent) => {
             this.fire(new Event(`${event.dataType}dataloading`, event));
-        });        
+        });
     }
 
     /*
