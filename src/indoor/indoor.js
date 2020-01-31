@@ -1,33 +1,45 @@
 // @flow
 
-import { Event, ErrorEvent, Evented } from '../util/evented';
+import {Event, ErrorEvent, Evented} from '../util/evented';
 import GeoJsonHelper from './geojson_helper';
-import { bindAll } from '../util/util';
+import {bindAll} from '../util/util';
 import MercatorCoordinate from '../../src/geo/mercator_coordinate';
+import Map from '../ui/map';
 
-// import type Map from '../ui/map';
-import type StyleLayer from './style_layer';
+import type {GeoJSON} from '@mapbox/geojson-types';
+import type {LayerSpecification, FilterSpecification} from '../style-spec/types';
+import type {Level, IndoorMap} from './types';
+import StyleLayer from '../style/style_layer';
+
+type LayerFilter = {
+    layer: LayerSpecification,
+    filter: FilterSpecification
+}
 
 const SOURCE_ID = "indoor";
 
 const LAYERS_TO_REMOVE = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scalerank3', 'road-label-small'];
 
+/**
+ * Manage indoor levels
+ * @extends Evented
+ * @param {Map} map the Mapbox map
+ */
 class Indoor extends Evented {
 
     _map: Map;
-    _source: Source;
-    _minLevel: number;
-    _maxLevel: number;
-    indoorFilters: Object;
+    _originalFilters: Array<LayerFilter>;
     _timestampLoadLevels: number;
     _currentTimeout: boolean;
-    _indoorMaps: Array;
+    _indoorMaps: Array<IndoorMap>;
+    _selectedMap: ?IndoorMap
 
     constructor(map: Map) {
         super();
 
         this._map = map;
         this._indoorMaps = [];
+        this._originalFilters = [];
         this._selectedMap = null;
 
         this._map.on('level', () => this._onLevelChanged(map.getLevel()));
@@ -42,9 +54,9 @@ class Indoor extends Evented {
         ], this);
     }
 
-    addMap(geojson: GeoJSONSourceSpecification, layers: Array<LayerSpecification>, imagesUrl: any) {
+    addMap(geojson: GeoJSON, layers: Array<LayerSpecification>) {
 
-        const { bounds, levelsRange } = GeoJsonHelper.extractLevelsRangeAndBounds(geojson);
+        const {bounds, levelsRange} = GeoJsonHelper.extractLevelsRangeAndBounds(geojson);
 
         this._indoorMaps.push({
             bounds,
@@ -62,15 +74,19 @@ class Indoor extends Evented {
      * ***********************
      */
 
-    _onLevelChanged(newLevel) {
-        if (!this.indoorFilters) {
-            return;
+    _onLevelChanged(newLevel: ?Level) {
+
+        let filterFn;
+
+        if (newLevel !== null && typeof newLevel !== 'undefined') {
+            filterFn = (filter: FilterSpecification): FilterSpecification => ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], newLevel.toString()]]];
+        } else {
+            filterFn = (filter: FilterSpecification): FilterSpecification => filter;
         }
-        Object.keys(this.indoorFilters)
-            .forEach(layerId => {
-                const filter = this.indoorFilters[layerId];
-                this._map.setFilter(layerId, newLevel === null ? filter : ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], newLevel]]]);
-            });
+
+        this._originalFilters.forEach(({layer, filter}) => {
+            this._map.setFilter(layer.id, filterFn(filter));
+        });
     }
 
     /**
@@ -79,10 +95,10 @@ class Indoor extends Evented {
      * **************
      */
 
-    updateSelectedMap(indoorMap) {
+    updateSelectedMap(indoorMap: ?IndoorMap) {
 
         if (this._map.getSource(SOURCE_ID)) {
-            this._map.getStyle().layers.forEach(layer => {
+            (Object.values(this._map.style._layers): any).forEach((layer: StyleLayer) => {
                 if (layer.source === SOURCE_ID) {
                     this._map.removeLayer(layer.id);
                 }
@@ -90,7 +106,7 @@ class Indoor extends Evented {
             this._map.removeSource(SOURCE_ID);
         }
 
-        this.indoorFilters = {};
+        this._originalFilters = [];
 
         if (!indoorMap) {
             LAYERS_TO_REMOVE.forEach(layerId => {
@@ -101,22 +117,22 @@ class Indoor extends Evented {
             return;
         }
 
-        const { geojson, layers, levelsRange } = indoorMap;
+        const {geojson, layers, levelsRange} = indoorMap;
 
         Promise.resolve()
             // Load Source
             .then(() => {
                 return new Promise(resolve => {
 
-                    this._source = this._map.addSource(SOURCE_ID, {
+                    const source = this._map.addSource(SOURCE_ID, {
                         type: "geojson",
                         data: geojson
                     });
 
-                    this._source.on('data', data => {
+                    source.on('data', data => {
                         if (data.dataType === "source" &&
                             data.sourceDataType === "metadata") {
-                            this._source.off('data', this);
+                            source.off('data', this);
                             resolve();
                         }
                     });
@@ -126,12 +142,11 @@ class Indoor extends Evented {
             // Add layers and save filters
             .then(() => {
                 const saveFilter = layer => {
-                    // Fill indoorFilters with existing filters
-                    let currentFilter = this._map.getFilter(layer.id);
-                    if (!currentFilter) {
-                        currentFilter = ["all"];
-                    }
-                    this.indoorFilters[layer.id] = currentFilter;
+                    const filter = this._map.getFilter(layer.id) || ["all"];
+                    this._originalFilters.push({
+                        layer,
+                        filter
+                    });
                 };
 
                 for (let i = 0; i < layers.length; i++) {
@@ -159,23 +174,22 @@ class Indoor extends Evented {
             // End of creation
             .then(() => {
 
-                const rangeEvent = { minLevel: levelsRange[0], maxLevel: levelsRange[1] };
-                this.fire(new Event('level.range.changed', rangeEvent));
+                this.fire(new Event('level.range.changed', levelsRange));
 
                 if (this._map.getLevel() !== null) {
                     this._onLevelChanged(this._map.getLevel());
                 } else {
-                    const defaultLevel = Math.max(Math.min(0, rangeEvent.maxLevel), rangeEvent.minLevel);
+                    const defaultLevel = Math.max(Math.min(0, levelsRange.max), levelsRange.min);
                     this._map.setLevel(defaultLevel);
                 }
 
-                this.fire(new Event('loaded', { sourceId: SOURCE_ID }));
+                this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
 
             })
 
             // Catch errors
             .catch(error => {
-                this.fire(new ErrorEvent('error', { error }));
+                this.fire(new ErrorEvent(error));
             });
 
         // // Load images
@@ -206,7 +220,7 @@ class Indoor extends Evented {
         // });
     }
 
-    createPoiLayers(metaLayer) {
+    createPoiLayers(metaLayer: LayerSpecification) {
 
         const newLayers = [];
 
@@ -222,7 +236,7 @@ class Indoor extends Evented {
         return newLayers;
     }
 
-    removeMap(geojson) {
+    removeMap(geojson: GeoJSON) {
         this._indoorMaps = this._indoorMaps.filter(indoorMap => indoorMap.geojson !== geojson);
         this.updateSelectedMapIfNeeded();
     }
@@ -276,12 +290,12 @@ class Indoor extends Evented {
         }
 
         const dist = (p1, p2) => {
-            const { x1, y1 } = MercatorCoordinate.fromLngLat(p1);
-            const { x2, y2 } = MercatorCoordinate.fromLngLat(p2);
+            const {x:x1, y:y1} = MercatorCoordinate.fromLngLat(p1);
+            const {x:x2, y:y2} = MercatorCoordinate.fromLngLat(p2);
             return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         };
 
-        // TODO Verify
+        // Verify this formula
         return mapsInBounds[
             mapsInBounds
                 .map(map => dist(map.bounds.getCenter(), cameraBounds.getCenter()))

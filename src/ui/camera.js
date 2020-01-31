@@ -20,6 +20,7 @@ import {Event, Evented} from '../util/evented';
 import type Transform from '../geo/transform';
 import type {LngLatLike} from '../geo/lng_lat';
 import type {LngLatBoundsLike} from '../geo/lng_lat_bounds';
+import type {Level} from '../indoor/types';
 import type {TaskID} from '../util/task_queue';
 import type {PointLike} from '@mapbox/point-geometry';
 
@@ -380,9 +381,9 @@ class Camera extends Evented {
         return this;
     }
 
-    getLevel(): ?number { return this.transform.level; }
+    getLevel(): ?Level { return this.transform.level; }
 
-    setLevel(level: ?number, eventData?: Object) {
+    setLevel(level: ?Level, eventData?: Object) {
         if (level !== null) {
             this.jumpTo({level}, eventData);
         } else {

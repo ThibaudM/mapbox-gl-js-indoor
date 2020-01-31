@@ -1,8 +1,22 @@
 // @flow
 
+import LngLat from "../geo/lng_lat";
 import LngLatBounds from "../geo/lng_lat_bounds";
+import type {GeoJSON, GeoJSONFeature, GeoJSONGeometry} from '@mapbox/geojson-types';
+import type {LevelsRange} from './types';
 
+type GeoJSONFeatureWithLevel = {
+    ...GeoJSONFeature,
+    +properties: ?{
+        level?: string
+    }
+};
+
+/**
+ * Helper for Geojson data
+ */
 class GeoJsonHelper {
+
     static generateOsmFilterTagsToMaki() {
         return [
             {
@@ -55,44 +69,62 @@ class GeoJsonHelper {
             }
         ];
     }
+
     /**
      * Get the bounds of a feature object
      *
-     * @param {Object} feature The feature object
+     * @param {GeoJSONFeature} feature The feature object
      * @returns {LngLatBounds} The feature bounds
      */
-    static getFeatureBounds({geometry}) {
+    static getFeatureBounds(feature: GeoJSONFeature) {
+        if (!feature.geometry) {
+            return new LngLatBounds();
+        }
+        return this.getGeometryBounds(feature.geometry);
+    }
+
+    /**
+     * Get the bounds of a geometry
+     *
+     * @param {GeoJSONGeometry} geometry The geometry
+     * @returns {LngLatBounds} The feature bounds
+     */
+    static getGeometryBounds(geometry: GeoJSONGeometry) {
 
         const bounds = new LngLatBounds();
 
-        const coordinates = geometry.coordinates;
-
         if (geometry.type === 'Point') {
 
-            bounds.extend(coordinates);
+            bounds.extend(LngLat.convert([geometry.coordinates[0], geometry.coordinates[1]]));
 
         } else if (geometry.type === 'LineString') {
 
-            coordinates.forEach(_coordinates => {
-                bounds.extend(_coordinates);
+            geometry.coordinates.forEach(coordinates => {
+                bounds.extend(LngLat.convert([coordinates[0], coordinates[1]]));
             });
 
         } else if (geometry.type === 'Polygon') {
 
-            coordinates.forEach(_coordinates => {
-                _coordinates.forEach(__coordinates => {
-                    bounds.extend(__coordinates);
+            geometry.coordinates.forEach(coordinates => {
+                coordinates.forEach(_coordinates => {
+                    bounds.extend(LngLat.convert([_coordinates[0], _coordinates[1]]));
                 });
             });
 
         } else if (geometry.type === 'MultiPolygon') {
 
-            coordinates.forEach(_coordinates => {
-                _coordinates.forEach(__coordinates => {
-                    __coordinates.forEach(___coordinates => {
-                        bounds.extend(___coordinates);
+            geometry.coordinates.forEach(coordinates => {
+                coordinates.forEach(_coordinates => {
+                    _coordinates.forEach(__coordinates => {
+                        bounds.extend(LngLat.convert([__coordinates[0], __coordinates[1]]));
                     });
                 });
+            });
+
+        } else if (geometry.type === 'GeometryCollection') {
+
+            geometry.geometries.forEach(_geometry => {
+                bounds.extend(this.getGeometryBounds(_geometry));
             });
 
         }
@@ -103,42 +135,51 @@ class GeoJsonHelper {
     /**
      * Extract level from feature
      *
-     * @param {Object} feature geojson feature
-     * @returns {Array|Number} the level or the range of level.
+     * @param {GeoJSONFeature} feature geojson feature
+     * @returns {LevelsRange | number | null} the level or the range of level.
      */
-    static extractLevelFromFeature(feature) {
-        const propertyLevel = feature.properties.level;
-        if (!propertyLevel) {
-            return;
-        }
-        const splitLevel = propertyLevel.split(';');
-        if (splitLevel.length === 1) {
-            const level = parseFloat(propertyLevel);
-            if (!isNaN(level)) {
-                return level;
+    static extractLevelFromFeature(feature: GeoJSONFeature | GeoJSONFeatureWithLevel): (LevelsRange | number | null) {
+        if (!!feature.properties &&
+            feature.properties.level !== null) {
+            const propertyLevel = feature.properties['level'];
+            if (typeof propertyLevel === 'string') {
+                const splitLevel = propertyLevel.split(';');
+                if (splitLevel.length === 1) {
+                    const level = parseFloat(propertyLevel);
+                    if (!isNaN(level)) {
+                        return level;
+                    }
+                } else if (splitLevel.length === 2) {
+                    const level1 = parseFloat(splitLevel[0]);
+                    const level2 = parseFloat(splitLevel[1]);
+                    if (!isNaN(level1) && !isNaN(level2)) {
+                        return {
+                            min: Math.min(level1, level2),
+                            max: Math.max(level1, level2)
+                        };
+                    }
+                }
             }
-        } else if (splitLevel.length === 2) {
-            const level1 = parseFloat(splitLevel[0]);
-            const level2 = parseFloat(splitLevel[1]);
-            if (!isNaN(level1) && !isNaN(level2)) {
-                return [
-                    Math.min(level1, level2),
-                    Math.max(level1, level2)
-                ];
-            }
         }
+        return null;
     }
 
-    static extractLevelsRangeAndBounds(geojson) {
+    /**
+     * Extract levels range and bounds from geojson
+     *
+     * @param {GeoJSON} geojson the geojson
+     * @returns {Object} the levels range and bounds.
+     */
+    static extractLevelsRangeAndBounds(geojson: GeoJSON): ({levelsRange: LevelsRange, bounds: LngLatBounds}) {
+
         let minLevel = Infinity;
         let maxLevel = -Infinity;
 
         const bounds = new LngLatBounds();
 
-        geojson.features.forEach(feature => {
+        const parseFeature = feature => {
             const level = this.extractLevelFromFeature(feature);
-
-            if (!level) {
+            if (level === null) {
                 return;
             }
 
@@ -147,18 +188,23 @@ class GeoJsonHelper {
             if (typeof level === 'number') {
                 minLevel = Math.min(minLevel, level);
                 maxLevel = Math.max(maxLevel, level);
-            } else if (Array.isArray(level)) {
-                minLevel = Math.min(minLevel, level[0]);
-                maxLevel = Math.max(maxLevel, level[1]);
+            } else if (typeof level === 'object') {
+                minLevel = Math.min(minLevel, level.min);
+                maxLevel = Math.max(maxLevel, level.max);
             }
+        };
 
-        });
+        if (geojson.type === 'FeatureCollection') {
+            geojson.features.forEach(parseFeature);
+        } else if (geojson.type === 'Feature') {
+            parseFeature(geojson);
+        }
 
         if (minLevel === Infinity || maxLevel === -Infinity) {
             throw new Error('No level found');
         }
         return {
-            levelsRange: [minLevel, maxLevel],
+            levelsRange: {min: minLevel, max: maxLevel},
             bounds
         };
     }

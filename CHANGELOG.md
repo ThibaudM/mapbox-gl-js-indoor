@@ -1,3 +1,6 @@
+## 1.7.0-0
+* Added indoor support
+
 ## 1.7.0
 
 ## ✨ Features

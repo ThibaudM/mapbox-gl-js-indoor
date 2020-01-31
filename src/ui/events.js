@@ -589,6 +589,17 @@ export type MapEvent =
     | 'pitchend'
 
     /**
+     * Fired whenever the map's level changes as.
+     * the result of either user interaction or methods such as {@link Map#flyTo}.
+     *
+     * @event level
+     * @memberof Map
+     * @instance
+     * @property {MapEventData} data
+     */
+    | 'level'
+
+    /**
      * Fired when a "box zoom" interaction starts. See {@link BoxZoomHandler}.
      *
      * @event boxzoomstart

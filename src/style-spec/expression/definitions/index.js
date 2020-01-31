@@ -118,6 +118,20 @@ function varargs(type: Type): Varargs {
     return {type};
 }
 
+function levelRangeFromString(str: string) {
+
+    if (!isNaN(str)) {
+        const value = parseFloat(str);
+        return {min: value, max: value};
+    } else {
+        const m = RegExp("(-?\\d+);(-?\\d+)", "g").exec(str);
+        if (m == null) throw Error();
+        if (m.length !== 3) throw Error();
+        return {min: parseFloat(m[1]), max: parseFloat(m[2])};
+    }
+
+}
+
 CompoundExpression.register(expressions, {
     'error': [
         ErrorType,
@@ -556,25 +570,21 @@ CompoundExpression.register(expressions, {
     ],
     'inrange': [
         BooleanType,
-        [StringType, NumberType],
+        [StringType, StringType],
         (ctx, [r, s]) => {
 
+            const range1 = r.evaluate(ctx);
+            const range2 = s.evaluate(ctx);
 
-            const range = r.evaluate(ctx);
-            const value = s.evaluate(ctx);
+            try {
+                const {min: minRange1, max: maxRange1} = levelRangeFromString(range1);
+                const {min: minRange2, max: maxRange2} = levelRangeFromString(range2);
 
-            // First, check if it is an integer
-            if (!isNaN(range)) return parseInt(range) == value;
+                return maxRange2 >= minRange1 && minRange2 <= maxRange1;
 
-            // Otherwise, use the regex
-            const m = RegExp("(-?\\d+);(-?\\d+)", "g").exec(range);
-
-            if (m == null) return false;
-            if (m.length !== 3) return false;
-            
-            const min = parseInt(m[1]);
-            const max = parseInt(m[2]);
-            return value >= min && value <= max;
+            } catch (e) {
+                return false;
+            }
         }
     ]
 });

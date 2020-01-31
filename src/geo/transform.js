@@ -12,6 +12,7 @@ import EXTENT from '../data/extent';
 import {vec4, mat4, mat2} from 'gl-matrix';
 
 import type {OverscaledTileID, CanonicalTileID} from '../source/tile_id';
+import type {Level} from '../indoor/types';
 
 /**
  * A single transform, generally used for a single tile to be
@@ -41,6 +42,7 @@ class Transform {
     labelPlaneMatrix: Float32Array;
     _fov: number;
     _pitch: number;
+    _level: ?Level;
     _zoom: number;
     _unmodified: boolean;
     _renderWorldCopies: boolean;
@@ -176,7 +178,7 @@ class Transform {
     get level(): ?number {
         return this._level;
     }
-    set level(level: ?number) {
+    set level(level: ?Level) {
         this._level = level;
     }
 

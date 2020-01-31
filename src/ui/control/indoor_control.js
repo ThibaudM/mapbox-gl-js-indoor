@@ -1,9 +1,10 @@
 // @flow
 
-import { bindAll } from '../../util/util';
+import {bindAll} from '../../util/util';
 import DOM from '../../util/dom';
-import type Indoor from '../indoor/indoor';
+import type Indoor from '../../indoor/indoor';
 import type Map from '../map';
+import type {Level, LevelsRange} from '../../indoor/types';
 
 const className = 'mapboxgl-ctrl';
 
@@ -16,30 +17,27 @@ class IndoorControl {
     _map: Map;
     _indoor: Indoor;
     _container: HTMLElement;
-    _levelsButtons: Array<number, HTMLElement>;
+    _levelsButtons: Array<HTMLElement>;
     _selectedButton: ?HTMLElement;
 
     constructor() {
-        this._levelsButtons = {};
+        this._levelsButtons = [];
         this._selectedButton = null;
 
         bindAll([
             '_onLevelChanged',
-            '_onLevelRangeChanged'
+            '_onLevelRangeChanged',
+            '_onContextMenu'
         ], this);
-
-        this._onLevelChanged.bind(this);
-        this._onLevelRangeChanged.bind(this);
     }
 
-    onAdd(map) {
+    onAdd(map: Map) {
         this._map = map;
         this._indoor = map._indoor;
 
         // Create container
         this._container = DOM.create('div', (`${className} ${className}-group`));
-        this._container.addEventListener('contextmenu', this._onContextMenu.bind(this));
-        this._el = map.getCanvasContainer();
+        this._container.addEventListener('contextmenu', this._onContextMenu);
 
         // If indoor layer is already loaded, update levels
         if (map.getLevel() !== null) {
@@ -58,7 +56,7 @@ class IndoorControl {
         this._map.off('level', this._onLevelChanged);
     }
 
-    _onLevelRangeChanged(range) {
+    _onLevelRangeChanged(range: LevelsRange) {
         if (range === null) {
             this._removeNavigationBar();
         } else {
@@ -73,16 +71,16 @@ class IndoorControl {
         }
     }
 
-    _loadNavigationBar(range) {
+    _loadNavigationBar(range: LevelsRange) {
 
         this._container.style.visibility = 'visible';
 
-        this._levelsButtons = {};
+        this._levelsButtons = [];
         while (this._container.firstChild) {
             this._container.removeChild(this._container.firstChild);
         }
 
-        for (let i = range.minLevel; i <= range.maxLevel; i++) {
+        for (let i = range.min; i <= range.max; i++) {
             this._levelsButtons[i] = this._createLevelButton(i);
         }
 
@@ -95,21 +93,21 @@ class IndoorControl {
         this._container.style.visibility = 'hidden';
     }
 
-    _setSelected(level) {
-        if (Object.keys(this._levelsButtons).length === 0) {
+    _setSelected(level: ?Level) {
+        if (this._levelsButtons.length === 0) {
             return;
         }
 
-        if (this._selectedButton !== null) {
+        if (this._selectedButton) {
             this._selectedButton.style.fontWeight = "normal";
         }
-        if (this._levelsButtons[level]) {
+        if ((level || level === 0) && this._levelsButtons[level]) {
             this._levelsButtons[level].style.fontWeight = "bold";
             this._selectedButton = this._levelsButtons[level];
         }
     }
 
-    _createLevelButton(level) {
+    _createLevelButton(level: Level) {
         const a = DOM.create('button', `${className}-icon`, this._container);
         a.innerHTML = level.toString();
         a.addEventListener('click', () => {
@@ -119,7 +117,7 @@ class IndoorControl {
         return a;
     }
 
-    _onContextMenu(e) {
+    _onContextMenu(e: Event) {
         e.preventDefault();
     }
 }

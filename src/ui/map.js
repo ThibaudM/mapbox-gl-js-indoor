@@ -39,6 +39,7 @@ import type {StyleOptions, StyleSetterOptions} from '../style/style';
 import type {MapEvent, MapDataEvent} from './events';
 import type {CustomLayerInterface} from '../style/style_layer/custom_style_layer';
 import type {StyleImageInterface, StyleImageMetadata} from '../style/style_image';
+import type {GeoJSON} from '@mapbox/geojson-types';
 
 import type ScrollZoomHandler from './handler/scroll_zoom';
 import type BoxZoomHandler from './handler/box_zoom';
@@ -2332,11 +2333,11 @@ class Map extends Camera {
         }
     }
 
-    addIndoorMap(geojson:GeoJSONSourceSpecification, layers:Array<LayerSpecification>) {
+    addIndoorMap(geojson: GeoJSON, layers: Array<LayerSpecification>) {
         this._indoor.addMap(geojson, layers);
     }
 
-    removeIndoorMap(geojson:GeoJSONSourceSpecification) {
+    removeIndoorMap(geojson: GeoJSON) {
         this._indoor.removeMap(geojson);
     }
 
