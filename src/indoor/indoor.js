@@ -33,6 +33,8 @@ class Indoor extends Evented {
     _currentTimeout: boolean;
     _indoorMaps: Array<IndoorMap>;
     _selectedMap: ?IndoorMap;
+    _previousSelectedMap: ?IndoorMap;
+    _previousSelectedLevel: ?Level;
 
     constructor(map: Map) {
         super();
@@ -112,6 +114,7 @@ class Indoor extends Evented {
             LAYERS_TO_REMOVE.forEach(layerId => {
                 this._map.setLayoutProperty(layerId, 'visibility', 'visible');
             });
+            this._previousSelectedLevel = this._map.getLevel();
             this._map.setLevel(null);
             this.fire(new Event('level.range.changed', null));
             return;
@@ -175,10 +178,15 @@ class Indoor extends Evented {
 
                 if (this._map.getLevel() !== null) {
                     this._onLevelChanged(this._map.getLevel());
+                } else if (this._previousSelectedMap === indoorMap && this._previousSelectedLevel !== null) {
+                    // This enable to zoom out, then zoom in to a building at the same zoom level.
+                    this._map.setLevel(this._previousSelectedLevel);
                 } else {
                     const defaultLevel = Math.max(Math.min(0, levelsRange.max), levelsRange.min);
                     this._map.setLevel(defaultLevel);
                 }
+
+                this._previousSelectedMap = indoorMap;
 
                 this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
 
