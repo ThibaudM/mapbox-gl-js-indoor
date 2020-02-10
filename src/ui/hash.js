@@ -60,7 +60,7 @@ class Hash {
 
     getHashString(mapFeedback?: boolean) {
         const center = this._map.getCenter(),
-            level = this._map.getLevel() || null,
+            level = this._map.getLevel(),
             zoom = Math.round(this._map.getZoom() * 100) / 100,
             // derived from equation: 512px * 2^z / 360 / 10^d < 0.5px
             precision = Math.ceil((zoom * Math.LN2 + Math.log(512 / 360 / 0.5)) / Math.LN10),
@@ -78,9 +78,9 @@ class Hash {
             hash += `${zoom}/${lat}/${lng}`;
         }
 
-        if (level !== null || bearing || pitch) hash += (`/${level === null ? '' : level.toString()}`);
-        if (bearing || pitch) hash += (`/${Math.round(bearing * 10) / 10}`);
-        if (pitch) hash += (`/${Math.round(pitch)}`);
+        if (bearing || pitch || typeof level === 'number') hash += (`/${Math.round(bearing * 10) / 10}`);
+        if (pitch || typeof level === 'number') hash += (`/${Math.round(pitch)}`);
+        if (typeof level === 'number') hash += (`/${level.toString()}`);
 
         if (this._hashName) {
             const hashName = this._hashName;
@@ -123,13 +123,13 @@ class Hash {
     _onHashChange() {
         const loc = this._getCurrentHash();
         if (loc.length >= 3 && !loc.some(v => isNaN(v))) {
-            const bearing = this._map.dragRotate.isEnabled() && this._map.touchZoomRotate.isEnabled() ? +(loc[4] || 0) : this._map.getBearing();
+            const bearing = this._map.dragRotate.isEnabled() && this._map.touchZoomRotate.isEnabled() ? +(loc[3] || 0) : this._map.getBearing();
             this._map.jumpTo({
                 center: [+loc[2], +loc[1]],
                 zoom: +loc[0],
                 bearing,
-                pitch: +(loc[5] || 0),
-                level: loc[3] !== '' ? parseFloat(loc[3]) : null
+                pitch: +(loc[4] || 0),
+                level: !isNaN(loc[5]) ? parseFloat(loc[5]) : null
             });
             return true;
         }
