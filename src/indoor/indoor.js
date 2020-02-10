@@ -32,7 +32,7 @@ class Indoor extends Evented {
     _timestampLoadLevels: number;
     _currentTimeout: boolean;
     _indoorMaps: Array<IndoorMap>;
-    _selectedMap: ?IndoorMap
+    _selectedMap: ?IndoorMap;
 
     constructor(map: Map) {
         super();
@@ -142,16 +142,13 @@ class Indoor extends Evented {
             // Add layers and save filters
             .then(() => {
                 const saveFilter = layer => {
-                    const filter = this._map.getFilter(layer.id) || ["all"];
                     this._originalFilters.push({
                         layer,
-                        filter
+                        filter: this._map.getFilter(layer.id) || ["all"]
                     });
                 };
 
-                for (let i = 0; i < layers.length; i++) {
-                    const layer = layers[i];
-
+                layers.forEach(layer => {
                     if (layer.id === "poi-indoor") {
                         this.createPoiLayers(layer).forEach(layer => {
                             this._map.addLayer(layer);
@@ -161,7 +158,7 @@ class Indoor extends Evented {
                         this._map.addLayer(layer);
                         saveFilter(layer);
                     }
-                }
+                });
             })
 
             // Remove some layers for rendering
