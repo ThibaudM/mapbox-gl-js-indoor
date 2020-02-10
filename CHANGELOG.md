@@ -1,3 +1,6 @@
+## 1.7.0-1
+* Enable zoom out zoom in to keep same building level for indoor
+
 ## 1.7.0-0
 * Added indoor support
 
