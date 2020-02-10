@@ -88,8 +88,7 @@ export type VectorSourceSpecification = {
     "scheme"?: "xyz" | "tms",
     "minzoom"?: number,
     "maxzoom"?: number,
-    "attribution"?: string,
-    "promoteId"?: PromoteIdSpecification
+    "attribution"?: string
 }
 
 export type RasterSourceSpecification = {
@@ -113,7 +112,8 @@ export type RasterDEMSourceSpecification = {
     "maxzoom"?: number,
     "tileSize"?: number,
     "attribution"?: string,
-    "encoding"?: "terrarium" | "mapbox"
+    "encoding"?: "terrarium" | "mapbox",
+    "promoteId"?: PromoteIdSpecification
 }
 
 export type GeoJSONSourceSpecification = {|
