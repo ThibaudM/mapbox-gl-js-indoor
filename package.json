@@ -1,7 +1,7 @@
 {
   "name": "@thibaudm/mapbox-gl-js-indoor",
   "description": "A WebGL interactive maps library",
-  "version": "1.7.0-1",
+  "version": "1.7.0-2",
   "main": "dist/mapbox-gl.js",
   "style": "dist/mapbox-gl.css",
   "license": "SEE LICENSE IN LICENSE.txt",

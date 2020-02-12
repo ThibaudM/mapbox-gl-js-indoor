@@ -1,3 +1,6 @@
+## 1.7.0-2
+* Added beforeLayerId for indoor style
+
 ## 1.7.0-1
 * Enable zoom out zoom in to keep same building level for indoor
 
