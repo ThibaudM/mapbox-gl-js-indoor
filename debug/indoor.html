@@ -42,7 +42,7 @@ function loadMaps(map, mapsPaths, layersPath) {
             mapsPaths.forEach(mapPath => {
                 fetch(mapPath)
                     .then(res => res.json())
-                    .then(geojson =>  map.addIndoorMap(geojson, layers));
+                    .then(geojson =>  map.addIndoorMap(geojson, layers, 'housenum-label'));
             });
         });
 }

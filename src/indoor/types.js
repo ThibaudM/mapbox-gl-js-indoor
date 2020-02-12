@@ -15,5 +15,6 @@ export type IndoorMap = {
     bounds: LngLatBounds,
     geojson: GeoJSON,
     layers: Array<LayerSpecification>,
-    levelsRange: LevelsRange
+    levelsRange: LevelsRange,
+    beforeLayerId?: string
 };

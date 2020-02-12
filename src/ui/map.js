@@ -2333,8 +2333,8 @@ class Map extends Camera {
         }
     }
 
-    addIndoorMap(geojson: GeoJSON, layers: Array<LayerSpecification>) {
-        this._indoor.addMap(geojson, layers);
+    addIndoorMap(geojson: GeoJSON, layers: Array<LayerSpecification>, beforeLayerId?: string) {
+        this._indoor.addMap(geojson, layers, beforeLayerId);
     }
 
     removeIndoorMap(geojson: GeoJSON) {

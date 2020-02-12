@@ -56,7 +56,7 @@ class Indoor extends Evented {
         ], this);
     }
 
-    addMap(geojson: GeoJSON, layers: Array<LayerSpecification>) {
+    addMap(geojson: GeoJSON, layers: Array<LayerSpecification>, beforeLayerId?: string) {
 
         const {bounds, levelsRange} = GeoJsonHelper.extractLevelsRangeAndBounds(geojson);
 
@@ -64,7 +64,8 @@ class Indoor extends Evented {
             bounds,
             geojson,
             layers,
-            levelsRange
+            levelsRange,
+            beforeLayerId
         });
 
         this.updateSelectedMapIfNeeded();
@@ -120,7 +121,7 @@ class Indoor extends Evented {
             return;
         }
 
-        const {geojson, layers, levelsRange} = indoorMap;
+        const {geojson, layers, levelsRange, beforeLayerId} = indoorMap;
 
         Promise.resolve()
             // Load Source
@@ -154,11 +155,11 @@ class Indoor extends Evented {
                 layers.forEach(layer => {
                     if (layer.id === "poi-indoor") {
                         this.createPoiLayers(layer).forEach(layer => {
-                            this._map.addLayer(layer);
+                            this._map.addLayer(layer, beforeLayerId);
                             saveFilter(layer);
                         });
                     } else {
-                        this._map.addLayer(layer);
+                        this._map.addLayer(layer, beforeLayerId);
                         saveFilter(layer);
                     }
                 });
