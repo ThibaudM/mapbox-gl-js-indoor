@@ -42,7 +42,7 @@ export type CameraOptions = {
     zoom?: number,
     bearing?: number,
     pitch?: number,
-    level?: ?number,
+    level?: Level | null,
     around?: LngLatLike
 };
 
@@ -381,9 +381,9 @@ class Camera extends Evented {
         return this;
     }
 
-    getLevel(): ?Level { return this.transform.level; }
+    getLevel(): Level | null { return this.transform.level; }
 
-    setLevel(level: ?Level, eventData?: Object) {
+    setLevel(level: Level | null, eventData?: Object) {
         if (level !== null) {
             this.jumpTo({level}, eventData);
         } else {
@@ -644,7 +644,7 @@ class Camera extends Evented {
             tr.pitch = +options.pitch;
         }
 
-        if ('level' in options && tr.level !== +options.level) {
+        if (options.level !== undefined && tr.level !== options.level) {
             levelChanged = true;
             tr.level = options.level;
         }

@@ -93,7 +93,7 @@ class IndoorControl {
         this._container.style.visibility = 'hidden';
     }
 
-    _setSelected(level: ?Level) {
+    _setSelected(level: Level | null) {
         if (this._levelsButtons.length === 0) {
             return;
         }
@@ -101,7 +101,7 @@ class IndoorControl {
         if (this._selectedButton) {
             this._selectedButton.style.fontWeight = "normal";
         }
-        if ((level || level === 0) && this._levelsButtons[level]) {
+        if (level !== null && this._levelsButtons[level]) {
             this._levelsButtons[level].style.fontWeight = "bold";
             this._selectedButton = this._levelsButtons[level];
         }

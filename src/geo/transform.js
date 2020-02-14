@@ -42,7 +42,7 @@ class Transform {
     labelPlaneMatrix: Float32Array;
     _fov: number;
     _pitch: number;
-    _level: ?Level;
+    _level: Level | null;
     _zoom: number;
     _unmodified: boolean;
     _renderWorldCopies: boolean;
@@ -175,10 +175,10 @@ class Transform {
         this._calcMatrices();
     }
 
-    get level(): ?number {
+    get level(): Level | null {
         return this._level;
     }
-    set level(level: ?Level) {
+    set level(level: Level | null) {
         this._level = level;
     }
 
