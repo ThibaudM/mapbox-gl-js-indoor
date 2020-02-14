@@ -2,19 +2,27 @@
 
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import GeoJsonHelper from './geojson_helper';
-import {bindAll} from '../util/util';
 import MercatorCoordinate from '../../src/geo/mercator_coordinate';
 import Map from '../ui/map';
+import LngLatBounds from '../geo/lng_lat_bounds';
+import defaultLayers from './default_style_helper';
 
 import type {GeoJSON} from '@mapbox/geojson-types';
 import type {LayerSpecification, FilterSpecification} from '../style-spec/types';
-import type {Level, IndoorMap} from './types';
-import StyleLayer from '../style/style_layer';
+import type {Level, LevelsRange} from './types';
 
-type LayerFilter = {
-    layer: LayerSpecification,
+type SavedFilter = {
+    layerId: string,
     filter: FilterSpecification
 }
+
+type IndoorMap = {
+    bounds: LngLatBounds,
+    geojson: GeoJSON,
+    layers: Array<LayerSpecification>,
+    levelsRange: LevelsRange,
+    beforeLayerId?: string
+};
 
 const SOURCE_ID = "indoor";
 
@@ -28,47 +36,41 @@ const LAYERS_TO_REMOVE = ['poi-scalerank4-l15', 'poi-scalerank4-l1', 'poi-scaler
 class Indoor extends Evented {
 
     _map: Map;
-    _originalFilters: Array<LayerFilter>;
-    _timestampLoadLevels: number;
-    _currentTimeout: boolean;
+    _savedFilters: Array<SavedFilter>;
     _indoorMaps: Array<IndoorMap>;
-    _selectedMap: ?IndoorMap;
-    _previousSelectedMap: ?IndoorMap;
-    _previousSelectedLevel: ?Level;
+    _selectedMap: IndoorMap | null;
+    _previousSelectedMap: IndoorMap | null;
+    _previousSelectedLevel: Level | null;
 
     constructor(map: Map) {
         super();
 
         this._map = map;
         this._indoorMaps = [];
-        this._originalFilters = [];
+        this._savedFilters = [];
         this._selectedMap = null;
 
-        this._map.on('level', () => this._onLevelChanged(map.getLevel()));
+        this._map.on('level', () => this._updateFiltering());
 
         this._map.on('load', () => {
-            this.updateSelectedMapIfNeeded();
-            this._map.on('moveend', () => this.updateSelectedMapIfNeeded());
+            this._updateSelectedMapIfNeeded();
+            this._map.on('moveend', () => this._updateSelectedMapIfNeeded());
         });
-
-        bindAll([
-            '_onLevelChanged'
-        ], this);
     }
 
-    addMap(geojson: GeoJSON, layers: Array<LayerSpecification>, beforeLayerId?: string) {
+    addMap(geojson: GeoJSON, layers?: Array<LayerSpecification>, beforeLayerId?: string) {
 
         const {bounds, levelsRange} = GeoJsonHelper.extractLevelsRangeAndBounds(geojson);
 
         this._indoorMaps.push({
             bounds,
             geojson,
-            layers,
+            layers: layers ? layers : defaultLayers,
             levelsRange,
             beforeLayerId
         });
 
-        this.updateSelectedMapIfNeeded();
+        this._updateSelectedMapIfNeeded();
     }
 
     /**
@@ -77,19 +79,30 @@ class Indoor extends Evented {
      * ***********************
      */
 
-    _onLevelChanged(newLevel: ?Level) {
+    addLayerForFiltering(layerId: string) {
+        this._savedFilters.push({
+            layerId,
+            filter: this._map.getFilter(layerId) || ["all"]
+        });
+    }
+
+    removeLayerFromFiltering(layerId: string) {
+        this._savedFilters = this._savedFilters.filter(obj => obj.layerId !== layerId);
+    }
+
+    _updateFiltering() {
+
+        const level = this._map.getLevel();
 
         let filterFn;
 
-        if (newLevel !== null && typeof newLevel !== 'undefined') {
-            filterFn = (filter: FilterSpecification): FilterSpecification => ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], newLevel.toString()]]];
+        if (level !== null) {
+            filterFn = (filter: FilterSpecification): FilterSpecification => ["all", filter, ["any", ["!", ["has", "level"]], ["inrange", ["get", "level"], level.toString()]]];
         } else {
             filterFn = (filter: FilterSpecification): FilterSpecification => filter;
         }
 
-        this._originalFilters.forEach(({layer, filter}) => {
-            this._map.setFilter(layer.id, filterFn(filter));
-        });
+        this._savedFilters.forEach(({layerId, filter}) => this._map.setFilter(layerId, filterFn(filter)));
     }
 
     /**
@@ -98,18 +111,15 @@ class Indoor extends Evented {
      * **************
      */
 
-    updateSelectedMap(indoorMap: ?IndoorMap) {
+    _updateSelectedMap(indoorMap: IndoorMap | null) {
 
-        if (this._map.getSource(SOURCE_ID)) {
-            (Object.values(this._map.style._layers): any).forEach((layer: StyleLayer) => {
-                if (layer.source === SOURCE_ID) {
-                    this._map.removeLayer(layer.id);
-                }
+        if (this._selectedMap !== null) {
+            this._selectedMap.layers.forEach(({id}) => {
+                this.removeLayerFromFiltering(id);
+                this._map.removeLayer(id);
             });
             this._map.removeSource(SOURCE_ID);
         }
-
-        this._originalFilters = [];
 
         if (!indoorMap) {
             LAYERS_TO_REMOVE.forEach(layerId => {
@@ -145,23 +155,9 @@ class Indoor extends Evented {
 
             // Add layers and save filters
             .then(() => {
-                const saveFilter = layer => {
-                    this._originalFilters.push({
-                        layer,
-                        filter: this._map.getFilter(layer.id) || ["all"]
-                    });
-                };
-
                 layers.forEach(layer => {
-                    if (layer.id === "poi-indoor") {
-                        this.createPoiLayers(layer).forEach(layer => {
-                            this._map.addLayer(layer, beforeLayerId);
-                            saveFilter(layer);
-                        });
-                    } else {
-                        this._map.addLayer(layer, beforeLayerId);
-                        saveFilter(layer);
-                    }
+                    this._map.addLayer(layer, beforeLayerId);
+                    this.addLayerForFiltering(layer.id);
                 });
             })
 
@@ -178,7 +174,7 @@ class Indoor extends Evented {
                 this.fire(new Event('level.range.changed', levelsRange));
 
                 if (this._map.getLevel() !== null) {
-                    this._onLevelChanged(this._map.getLevel());
+                    this._updateFiltering();
                 } else if (this._previousSelectedMap === indoorMap && this._previousSelectedLevel !== null) {
                     // This enable to zoom out, then zoom in to a building at the same zoom level.
                     this._map.setLevel(this._previousSelectedLevel);
@@ -197,54 +193,11 @@ class Indoor extends Evented {
             .catch(error => {
                 this.fire(new ErrorEvent(error));
             });
-
-        // // Load images
-        // const requestImages = this._map._transformRequest(imagesUrl);
-        // getJSON(requestImages, (error, json) => {
-        //     if (error) {
-        //         this.fire(new ErrorEvent('error', {error}));
-        //         return;
-        //     }
-
-        //     var imagesToLoad = 0;
-        //     for(var key in json)
-        //         if(json.hasOwnProperty(key))
-        //             imagesToLoad++;
-
-        //     for (const imageId in json) {
-        //         const imageUrl = json[imageId];
-
-        //         this._map.loadImage(imageUrl, function(error, image) {
-        //             if (error) throw error;
-        //             map.addImage(imageId, image);
-        //             imagesToLoad--;
-        //             if(imagesToLoad == 0) {
-        //                 //ended
-        //             }
-        //         });
-        //     }
-        // });
-    }
-
-    createPoiLayers(metaLayer: LayerSpecification) {
-
-        const newLayers = [];
-
-        const osmFilterTagsToMaki = GeoJsonHelper.generateOsmFilterTagsToMaki();
-        for (let i = 0; i < osmFilterTagsToMaki.length; i++) {
-            const poi = osmFilterTagsToMaki[i];
-            const newLayer = JSON.parse(JSON.stringify(metaLayer));
-            newLayer.id += `-${poi.maki}`;
-            newLayer.filter = poi.filter;
-            newLayer.layout['icon-image'] = (`${poi.maki}-15`);
-            newLayers.push(newLayer);
-        }
-        return newLayers;
     }
 
     removeMap(geojson: GeoJSON) {
         this._indoorMaps = this._indoorMaps.filter(indoorMap => indoorMap.geojson !== geojson);
-        this.updateSelectedMapIfNeeded();
+        this._updateSelectedMapIfNeeded();
     }
 
     /**
@@ -253,11 +206,11 @@ class Indoor extends Evented {
      * ***********************
      */
 
-    updateSelectedMapIfNeeded() {
+    _updateSelectedMapIfNeeded() {
         const closestMap = this.closestMap();
         if (closestMap !== this._selectedMap) {
+            this._updateSelectedMap(closestMap);
             this._selectedMap = closestMap;
-            this.updateSelectedMap(closestMap);
         }
     }
 
