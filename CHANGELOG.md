@@ -1,3 +1,8 @@
+## 1.7.0-3
+* Added access to `Indoor` object from map
+* Added default indoor layers (style) to library
+* Added two methods: `addLayerForFiltering` and `removeLayerFromFiltering` to let the map manage external layers with level filtering
+
 ## 1.7.0-2
 * Added beforeLayerId for indoor style
 
