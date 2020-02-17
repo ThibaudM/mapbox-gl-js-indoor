@@ -1,3 +1,6 @@
+## 1.7.0-5
+* Enhanced level saved for a building
+
 ## 1.7.0-4
 * Select an existing level when current is out of range when a building is loaded
 
