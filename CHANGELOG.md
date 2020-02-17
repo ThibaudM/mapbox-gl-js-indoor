@@ -1,3 +1,6 @@
+## 1.7.0-6
+* Fixed several levels shown in same time
+
 ## 1.7.0-5
 * Enhanced level saved for a building
 
