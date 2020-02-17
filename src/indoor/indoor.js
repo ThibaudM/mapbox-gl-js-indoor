@@ -125,7 +125,13 @@ class Indoor extends Evented {
             LAYERS_TO_REMOVE.forEach(layerId => {
                 this._map.setLayoutProperty(layerId, 'visibility', 'visible');
             });
-            this._previousSelectedLevel = this._map.getLevel();
+            const mapLevel = this._map.getLevel();
+            if (this._selectedMap !== null && mapLevel !== null) {
+                const {levelsRange} = this._selectedMap;
+                this._previousSelectedLevel = mapLevel <= levelsRange.max && mapLevel >= levelsRange.min ? mapLevel : null;
+            } else {
+                this._previousSelectedLevel = null;
+            }
             this._map.setLevel(null);
             this.fire(new Event('level.range.changed', null));
             return;
