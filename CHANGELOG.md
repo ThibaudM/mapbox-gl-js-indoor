@@ -1,3 +1,6 @@
+## 1.7.0-4
+* Select an existing level when current is out of range when a building is loaded
+
 ## 1.7.0-3
 * Added access to `Indoor` object from map
 * Added default indoor layers (style) to library
