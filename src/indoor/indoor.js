@@ -186,9 +186,8 @@ class Indoor extends Evented {
                 } else if (currentLevel === null || currentLevel < levelsRange.min || currentLevel > levelsRange.max) {
                     const defaultLevel = Math.max(Math.min(0, levelsRange.max), levelsRange.min);
                     this._map.setLevel(defaultLevel);
-                } else {
-                    this._updateFiltering();
                 }
+                this._updateFiltering();
                 this._previousSelectedMap = indoorMap;
 
                 this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
