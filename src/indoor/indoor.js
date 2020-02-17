@@ -173,16 +173,16 @@ class Indoor extends Evented {
 
                 this.fire(new Event('level.range.changed', levelsRange));
 
-                if (this._map.getLevel() !== null) {
-                    this._updateFiltering();
-                } else if (this._previousSelectedMap === indoorMap && this._previousSelectedLevel !== null) {
+                const currentLevel = this._map.getLevel();
+                if (this._previousSelectedMap === indoorMap && this._previousSelectedLevel !== null) {
                     // This enable to zoom out, then zoom in to a building at the same zoom level.
                     this._map.setLevel(this._previousSelectedLevel);
-                } else {
+                } else if (currentLevel === null || currentLevel < levelsRange.min || currentLevel > levelsRange.max) {
                     const defaultLevel = Math.max(Math.min(0, levelsRange.max), levelsRange.min);
                     this._map.setLevel(defaultLevel);
+                } else {
+                    this._updateFiltering();
                 }
-
                 this._previousSelectedMap = indoorMap;
 
                 this.fire(new Event('loaded', {sourceId: SOURCE_ID}));
