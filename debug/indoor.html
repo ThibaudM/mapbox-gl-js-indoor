@@ -21,7 +21,7 @@
 var map = window.map = new mapboxgl.Map({
     container: 'map',
     zoom: 18,
-    center: [5.80706959702, 45.21808941904],
+    center: [2.3592843, 48.8767904],
     style: 'mapbox://styles/mapbox/streets-v10',
     hash: true
 });
@@ -30,7 +30,7 @@ let layers;
 
 map.on('load', function() {
     loadMaps(map, [
-        'inria.geojson'
+        'gare-de-l-est.geojson'
     ]);
 });
 
