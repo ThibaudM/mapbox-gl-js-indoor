@@ -259,12 +259,19 @@ class Indoor extends Evented {
             return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
         };
 
-        // Verify this formula
-        return mapsInBounds[
-            mapsInBounds
-                .map(map => dist(map.bounds.getCenter(), cameraBounds.getCenter()))
-                .reduce((iMin, x, i, arr) => x < arr[iMin] ? i : iMin, Infinity)
-        ];
+        /*
+         * If there is multiple maps at this step, select the closest
+         */
+        let minDist = Number.POSITIVE_INFINITY;
+        let closestMap = null;
+        for (const map of mapsInBounds) {
+            const _dist = dist(map.bounds.getCenter(), cameraBounds.getCenter());
+            if (_dist < minDist) {
+                closestMap = map;
+                minDist = _dist;
+            }
+        }
+        return closestMap;
     }
 }
 
