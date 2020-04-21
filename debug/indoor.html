@@ -7,13 +7,16 @@
     <link rel='stylesheet' href='../dist/mapbox-gl.css' />
     <style>
         body { margin: 0; padding: 0; }
-        html, body, #map { height: 100%; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        #menu { position: absolute; background: #ffffffaa; }
+        #menu > button { display: block; margin: 10px; }
     </style>
 </head>
 
 <body>
 <div id='map'></div>
-
+<div id="menu"></div>
+    
 <script src='../dist/mapbox-gl-dev.js'></script>
 <script src='../debug/access_token_generated.js'></script>
 <script>
@@ -26,32 +29,35 @@ var map = window.map = new mapboxgl.Map({
     hash: true
 });
 
-const geojsonMapsPath = [
-    'indoor-maps/gare-de-l-est.geojson',
-    'indoor-maps/caserne.geojson',
-    'indoor-maps/grand-place.geojson'
+const geojsonMaps = [
+    {path: 'indoor-maps/gare-de-l-est.geojson', center: [2.3592843, 48.8767904]},
+    {path: 'indoor-maps/caserne.geojson', center: [5.723078, 45.183754]},
+    {path: 'indoor-maps/grand-place.geojson', center: [5.732179, 45.157955]}
 ];
 
+function createMapButton(mapPath, center) {
+    const btn = document.createElement('button');
+    btn.innerHTML = mapPath.replace(/^.*[\\\/]/, '');
+    btn.addEventListener('click', function () { map.flyTo({center,  zoom: 18, duration: 2000}); });
+    document.getElementById('menu').appendChild(btn);
+}
+
 map.on('load', function() {
-    geojsonMapsPath.forEach(mapPath => {
-        fetch(mapPath)
-            .then(res => res.json())
-            .then(geojson => {
+    geojsonMaps.forEach(function({path, center}) {
+        fetch(path)
+            .then(function(res) { return res.json(); })
+            .then(function (geojson) {
                 // 1st arg : geojson <- the geojson map
                 // 2nd arg : layers <- mapbox style layers to apply to the source (null = default)
                 // 3th arg : beforeLayerId <- where to attach new layers (null = at the end)
                 map.indoor.addMap(geojson, null, 'housenum-label');
+                createMapButton(path, center);
             });
     });
 });
 
-map.addControl(new mapboxgl.GeolocateControl({
-    positionOptions: {
-        enableHighAccuracy: true
-    },
-    trackUserLocation: true
-}));
 map.addControl(new mapboxgl.IndoorControl());
+
 </script>
 </body>
 </html>
