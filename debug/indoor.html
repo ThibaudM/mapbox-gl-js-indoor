@@ -26,21 +26,24 @@ var map = window.map = new mapboxgl.Map({
     hash: true
 });
 
-let layers;
+const geojsonMapsPath = [
+    'indoor-maps/gare-de-l-est.geojson',
+    'indoor-maps/caserne.geojson',
+    'indoor-maps/grand-place.geojson'
+];
 
 map.on('load', function() {
-    loadMaps(map, [
-        'gare-de-l-est.geojson'
-    ]);
-});
-
-function loadMaps(map, mapsPaths) {
-    mapsPaths.forEach(mapPath => {
+    geojsonMapsPath.forEach(mapPath => {
         fetch(mapPath)
             .then(res => res.json())
-            .then(geojson => map.indoor.addMap(geojson, null, 'housenum-label'));
+            .then(geojson => {
+                // 1st arg : geojson <- the geojson map
+                // 2nd arg : layers <- mapbox style layers to apply to the source (null = default)
+                // 3th arg : beforeLayerId <- where to attach new layers (null = at the end)
+                map.indoor.addMap(geojson, null, 'housenum-label');
+            });
     });
-}
+});
 
 map.addControl(new mapboxgl.GeolocateControl({
     positionOptions: {
