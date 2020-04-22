@@ -1,3 +1,6 @@
+## 1.7.0-7
+* Fixed multiple overlap maps selection
+
 ## 1.7.0-6
 * Fixed several levels shown in same time
 
